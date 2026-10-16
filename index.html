@@ -1,0 +1,3341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b09">
+  <meta name="description" content="UNDO — a command station for AI. Work with files, project context, checks and backups — in one terminal interface.">
+  <title>UNDO — Command Station for AI</title>
+  <style>
+    :root {
+      --bg: #080b09;
+      --surface: #0d120e;
+      --panel: #101711;
+      --panel-light: #151e16;
+      --line: #29372a;
+      --line-bright: #40583f;
+      --green: #a8f06a;
+      --green-dim: #70bd51;
+      --white: #e9f1e7;
+      --muted: #91a08f;
+      --dim: #627061;
+      --mono: "VT323", "Consolas", "Courier New", monospace;
+      --sans: "Consolas", "Segoe UI", system-ui, sans-serif;
+      --win-blue: #1f3a5f;
+      --win-line: #2b4767;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--white);
+      background:
+        radial-gradient(ellipse at 80% 4%, rgba(93, 163, 67, .12), transparent 34rem),
+        linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, 100% 4px, auto;
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+    .shell { width: min(1200px, calc(100% - 40px)); margin-inline: auto; }
+    .mono { font-family: var(--mono); }
+
+    /* TOP LINE */
+    .topline {
+      border-bottom: 1px solid var(--line);
+      color: var(--dim);
+      font: 12px var(--mono);
+      letter-spacing: .04em;
+    }
+    .topline-inner { min-height: 32px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .top-status { color: var(--green); }
+
+    /* NAV */
+    .nav {
+      min-height: 72px; display: flex; align-items: center; justify-content: space-between;
+      gap: 25px; border-bottom: 1px solid var(--line);
+    }
+    .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: .18em; }
+    .brand-icon {
+      width: 34px; height: 34px; display: grid; place-items: center;
+      border: 1px solid var(--green); border-radius: 4px; color: var(--green);
+      font: 25px var(--mono); box-shadow: inset 0 0 14px rgba(168,240,106,.08), 0 0 17px rgba(168,240,106,.08);
+    }
+    .nav-right { display: flex; align-items: center; gap: 20px; }
+    .nav-links { display: flex; align-items: center; gap: 22px; color: var(--muted); font: 13px var(--mono); }
+    .nav-links a:hover { color: var(--green); }
+    .nav-cta, .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      min-height: 42px; padding: 9px 15px; border: 1px solid var(--line-bright);
+      border-radius: 3px; background: #101711; color: var(--green);
+      font: 13px var(--mono); transition: .18s ease; cursor: pointer;
+    }
+    .nav-cta:hover, .button:hover { border-color: var(--green); box-shadow: 0 0 18px rgba(168,240,106,.1); }
+    .button.primary { background: var(--green); border-color: var(--green); color: #091007; font-weight: 700; }
+    .button.primary:hover { background: #bcff86; }
+
+    .lang-switch {
+      display: inline-flex; border: 1px solid var(--line-bright); border-radius: 3px; overflow: hidden;
+      background: #0b100b;
+    }
+    .lang-switch button {
+      border: 0; background: transparent; color: var(--dim); cursor: pointer;
+      padding: 7px 11px; font: 11px var(--mono); letter-spacing: .08em;
+      border-right: 1px solid var(--line);
+    }
+    .lang-switch button:last-child { border-right: 0; }
+    .lang-switch button.active { color: var(--green); background: #141c14; }
+    .lang-switch button:hover { color: var(--green); }
+
+    /* HERO */
+    .hero {
+      display: grid; grid-template-columns: .95fr 1.05fr; gap: 56px; align-items: center;
+      min-height: 560px; padding-block: 70px 60px;
+    }
+    .kicker { color: var(--green); font: 12px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+    .kicker::before { content: "[ "; color: var(--dim); }
+    .kicker::after { content: " ]"; color: var(--dim); }
+    h1 {
+      margin: 22px 0 19px; font-size: clamp(44px, 6vw, 74px);
+      line-height: 1.02; letter-spacing: -.065em; font-weight: 760;
+    }
+    h1 .accent { color: var(--green); text-shadow: 0 0 30px rgba(168,240,106,.16); }
+    .hero-copy { max-width: 510px; margin: 0; color: #a5b1a3; font-size: 17px; line-height: 1.8; }
+    .hero-actions { display: flex; gap: 11px; flex-wrap: wrap; margin-top: 29px; }
+    .hero-note { margin-top: 18px; color: var(--dim); font: 12px var(--mono); }
+    .hero-note span { color: var(--green); }
+
+    /* STAGE — full Windows desktop with two app windows */
+    .stage {
+      position: relative;
+      min-height: 480px;
+      border: 1px solid var(--line-bright);
+      background:
+        radial-gradient(ellipse at 75% 12%, rgba(80,140,220,.20), transparent 55%),
+        linear-gradient(140deg, #0b1728 0%, #0a2038 40%, #071322 100%);
+      box-shadow: 0 22px 70px rgba(0,0,0,.55), 0 0 50px rgba(95,160,66,.06);
+      overflow: hidden;
+      border-radius: 4px;
+    }
+    .undo-pane { display: flex; flex-direction: column; }
+
+    /* Taskbar at the bottom */
+    .taskbar {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+      background: rgba(6,12,22,.92);
+      border-top: 1px solid rgba(120,170,220,.25);
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 8px;
+      font: 10.5px var(--mono); color: #b9d3ee;
+      z-index: 30;
+    }
+    .start-btn {
+      width: 22px; height: 20px; display: grid; place-items: center;
+      color: #a8f06a; font-size: 14px;
+    }
+    .task-item {
+      padding: 3px 8px; border-radius: 2px;
+      color: #9db8d4; border: 1px solid transparent;
+    }
+    .task-item.active {
+      background: rgba(80,140,220,.18);
+      border-color: rgba(120,170,220,.35);
+      color: #d5e8ff;
+    }
+    .task-spacer { flex: 1; }
+    .task-clock { color: #cfe2f4; }
+
+    /* Windows desktop icons (behind windows) */
+    .desk-icons-bg {
+      position: absolute; left: 14px; top: 14px;
+      display: flex; flex-direction: column; gap: 14px;
+      z-index: 1;
+    }
+    .desk-icon {
+      width: 60px; text-align: center; color: #cfe2f4;
+      font: 9.5px var(--mono);
+    }
+    .desk-icon .folder-shape,
+    .desk-icon .file-shape {
+      width: 32px; height: 28px; margin: 0 auto 3px;
+      position: relative;
+    }
+    .desk-icon .folder-shape {
+      background: linear-gradient(180deg, #f0c25a, #c79022);
+      border-radius: 2px;
+    }
+    .desk-icon .folder-shape::before {
+      content: ''; position: absolute; left: 3px; top: -5px;
+      width: 13px; height: 6px; background: #f0c25a; border-radius: 2px 2px 0 0;
+    }
+    .desk-icon .file-shape {
+      background: #e8eef7; border-radius: 2px;
+      border: 1px solid #b9c6d8;
+    }
+    .desk-icon .file-shape::before {
+      content: ''; position: absolute; right: -1px; top: -1px;
+      border-top: 8px solid #b9c6d8; border-left: 8px solid transparent;
+    }
+    .desk-icon .file-shape.txt::after {
+      content: 'TXT'; position: absolute; left: 3px; bottom: 2px;
+      color: #2c5d2c; font: bold 7px var(--mono);
+    }
+    .desk-icon .file-shape.py::after {
+      content: 'PY'; position: absolute; left: 4px; bottom: 2px;
+      color: #2c5d2c; font: bold 7.5px var(--mono);
+    }
+
+    /* The app windows */
+    .window-app {
+      position: absolute;
+      background: #0a0e14;
+      border: 1px solid #2b3a4a;
+      border-radius: 4px;
+      box-shadow: 0 14px 44px rgba(0,0,0,.55), 0 0 0 1px rgba(120,170,220,.06);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      z-index: 5;
+    }
+    .win-deepseek {
+      left: 4%; top: 5%;
+      width: 52%; height: 76%;
+    }
+    .win-undo {
+      right: 4%; top: 12%;
+      width: 40%; height: 76%;
+      background: #050705;
+    }
+
+    .win-chrome {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 9px;
+      background: #121821;
+      border-bottom: 1px solid #1c2530;
+      font: 10px var(--mono); color: #7d97b6;
+      flex: 0 0 auto;
+    }
+    .win-undo .win-chrome { background: #0c140c; border-bottom-color: #1d291e; }
+    .win-lights { display: flex; gap: 4px; }
+    .win-lights i { width: 7px; height: 7px; border-radius: 50%; background: #3a4a5e; }
+    .win-lights i:first-child { background: #db7163; }
+    .win-lights i:nth-child(2) { background: #dbbb5c; }
+    .win-lights i:nth-child(3) { background: #77bd67; }
+    .win-url {
+      flex: 1; display: flex; align-items: center; gap: 5px;
+      background: #0a0e14; border: 1px solid #1c2530;
+      border-radius: 10px; padding: 2px 10px;
+      font: 10px var(--mono); color: #b9d3ee;
+    }
+    .win-url .lock { color: #77bd67; }
+    .win-title { flex: 1; color: #a8f06a; }
+    .win-menu { color: #7d97b6; cursor: default; padding: 0 3px; }
+
+    .browser-page {
+      flex: 1; padding: 12px 12px 8px;
+      display: flex; flex-direction: column; gap: 9px;
+      background: radial-gradient(ellipse at 30% 0%, rgba(80,140,220,.10), transparent 60%), #080b10;
+      overflow: hidden;
+    }
+    .chat-msg { font: 11.5px/1.6 var(--mono); color: #c3d0bf; opacity: 0; }
+    .chat-msg.show { animation: msgIn .45s forwards; }
+    .chat-msg .who {
+      display: inline-block; font-size: 9.5px; letter-spacing: .1em;
+      padding: 1px 5px; border-radius: 2px; margin-bottom: 4px;
+    }
+    .chat-msg div { margin-top: 2px; }
+    .chat-user .who { background: #123a2c; color: #a8f06a; }
+    .chat-ai .who { background: #123048; color: #8bc7e9; }
+    .chat-user div { color: #cfe0d7; }
+    .chat-ai div { color: #c3d0bf; }
+    .chat-code {
+      position: relative; margin-top: 6px; padding: 8px 10px;
+      border: 1px solid var(--line); background: #0d140e;
+      color: var(--green); font: 11px/1.7 var(--mono); white-space: pre;
+      border-radius: 3px;
+    }
+    .chat-code.active {
+      border-color: var(--green);
+      box-shadow: 0 0 16px rgba(168,240,106,.35);
+    }
+    .chat-code .copy-btn {
+      position: absolute; top: 4px; right: 4px;
+      border: 1px solid var(--line-bright); background: #101711;
+      color: var(--green); font: 9px var(--mono);
+      padding: 2px 6px; cursor: pointer;
+    }
+    .browser-status {
+      margin-top: auto; padding-top: 6px;
+      border-top: 1px solid #1c2530;
+      color: var(--dim); font: 10px var(--mono); letter-spacing: .04em;
+    }
+    .browser-status.live { color: var(--green); }
+    .pasted-text {
+      margin-top: 4px; padding: 6px 9px;
+      border-left: 2px solid #3a5e8a;
+      background: #0d1620; color: #b9d3ee;
+      font: 10.5px/1.5 var(--mono); border-radius: 0 3px 3px 0;
+    }
+    .chat-ai-confirm b { color: var(--green); font-weight: 500; }
+
+    /* Undo pane */
+    .undo-box {
+      flex: 1; padding: 10px 12px;
+      font: 11.5px/1.85 var(--mono); color: #c3d0bf;
+      background: #050705;
+      overflow: hidden;
+    }
+    .undo-line { display: flex; gap: 8px; opacity: 0; }
+    .undo-line .t { color: #586657; flex: 0 0 46px; }
+    .undo-line.show { animation: msgIn .35s forwards; }
+    .u-green { color: var(--green); }
+    .u-blue { color: #8bc7e9; }
+    .u-muted { color: #758273; }
+    .undo-caret { display: inline-block; width: 7px; height: 12px; background: var(--green); vertical-align: middle; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes msgIn { to { opacity: 1; } }
+
+    /* Clipboard flow indicator — floats between windows */
+    .clip-flow {
+      position: absolute;
+      left: 50%; top: 46%;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    .buffer-icon {
+      width: 40px; height: 50px; border: 2px solid var(--line-bright);
+      border-radius: 3px; position: relative; background: #0b100b;
+      display: grid; place-items: center; color: var(--dim); font: 8.5px var(--mono);
+      transition: border-color .25s, box-shadow .25s, color .25s, transform .25s;
+      box-shadow: 0 6px 20px rgba(0,0,0,.6);
+    }
+    .buffer-icon::before {
+      content: ''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+      width: 16px; height: 6px; border: 2px solid var(--line-bright);
+      border-bottom: none; border-radius: 3px 3px 0 0; background: #050705;
+      transition: border-color .25s;
+    }
+    .buffer-icon.filled {
+      border-color: var(--green); color: var(--green);
+      box-shadow: 0 0 20px rgba(168,240,106,.55), 0 6px 20px rgba(0,0,0,.6);
+      transform: scale(1.08);
+    }
+    .buffer-icon.filled::before { border-color: var(--green); }
+    .paste-flash {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: var(--green); font: 9px var(--mono); opacity: 0; pointer-events: none;
+      white-space: nowrap;
+    }
+    .paste-flash.show { animation: flashUp .9s; }
+    @keyframes flashUp {
+      0% { opacity: 0; transform: translate(-50%,-40%); }
+      30% { opacity: 1; transform: translate(-50%,-60%); }
+      100% { opacity: 0; transform: translate(-50%,-90%); }
+    }
+
+    /* File that appears on the desktop — next to Project folder */
+    .desk-new-file {
+      position: absolute;
+      left: 84px; top: 14px;
+      width: 60px; text-align: center; color: #cfe2f4;
+      font: 9.5px var(--mono);
+      opacity: 0; transform: scale(.4);
+      z-index: 8;
+    }
+    .desk-new-file .file-shape {
+      width: 32px; height: 28px; margin: 0 auto 3px;
+      position: relative;
+      background: #e8eef7; border-radius: 2px;
+      border: 1px solid #b9c6d8;
+    }
+    .desk-new-file .file-shape::before {
+      content: ''; position: absolute; right: -1px; top: -1px;
+      border-top: 8px solid #b9c6d8; border-left: 8px solid transparent;
+    }
+    .desk-new-file .file-shape.py::after {
+      content: 'PY'; position: absolute; left: 4px; bottom: 2px;
+      color: #2c5d2c; font: bold 7.5px var(--mono);
+    }
+    .desk-new-file.show {
+      animation: fileAppear .8s cubic-bezier(.2,.9,.3,1.4) forwards;
+    }
+    @keyframes fileAppear {
+      0%   { opacity: 0; transform: scale(.3) rotate(-8deg); }
+      60%  { opacity: 1; transform: scale(1.15) rotate(2deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0); }
+    }
+    .desk-new-file.highlight .file-shape {
+      box-shadow: 0 0 18px rgba(168,240,106,.9), 0 0 34px rgba(168,240,106,.4);
+      border-color: var(--green);
+    }
+
+    /* File preview */
+    .desk-preview {
+      position: absolute;
+      left: 18%; top: 62%;
+      width: 34%; max-width: 280px;
+      background: #0d140e; border: 1px solid var(--green);
+      border-radius: 3px; padding: 8px 10px;
+      font: 10.5px/1.5 var(--mono); color: #c3d0bf;
+      box-shadow: 0 0 30px rgba(168,240,106,.35);
+      opacity: 0; transform: scale(.9);
+      transition: opacity .35s, transform .35s;
+      z-index: 10;
+    }
+    .desk-preview.show { opacity: 1; transform: scale(1); }
+    .desk-preview .pv-bar {
+      display: flex; justify-content: space-between; color: var(--muted);
+      border-bottom: 1px solid #1d291e; padding-bottom: 4px; margin-bottom: 6px;
+      font-size: 10px;
+    }
+    .desk-preview .pv-bar b { color: var(--green); font-weight: 400; }
+
+    /* Floating cursor */
+    .stage-cursor {
+      position: absolute; top: 0; left: 0; width: 16px; height: 16px;
+      pointer-events: none; transition: transform 1s cubic-bezier(.5,.05,.3,1), opacity .3s;
+      opacity: 0; z-index: 25;
+    }
+    .stage-cursor::after {
+      content: ''; position: absolute; inset: 0;
+      background: var(--green); clip-path: polygon(0 0, 0 70%, 25% 55%, 45% 90%, 60% 80%, 40% 48%, 70% 45%);
+      filter: drop-shadow(0 0 5px rgba(168,240,106,.95));
+    }
+    .stage-cursor.click::before {
+      content: ''; position: absolute; inset: -10px; border-radius: 50%;
+      border: 1px solid var(--green); opacity: 0; animation: clickPulse .5s;
+    }
+    @keyframes clickPulse {
+      0% { opacity: 1; transform: scale(.4); }
+      100% { opacity: 0; transform: scale(1); }
+    }
+
+    /* Step counter badge */
+    .stage-step {
+      position: absolute; top: 8px; right: 10px;
+      font: 10px var(--mono); color: var(--dim); letter-spacing: .1em;
+      background: rgba(5,7,5,.75); border: 1px solid #1d291e;
+      padding: 3px 8px; border-radius: 2px; z-index: 35;
+    }
+    .stage-step b { color: var(--green); font-weight: 400; }
+
+    /* RIGHT — Windows desktop (inside Undo pane) */
+    .desk {
+      position: relative;
+      margin-top: 10px;
+      min-height: 140px;
+      background:
+        radial-gradient(ellipse at 70% 15%, rgba(80,140,220,.28), transparent 60%),
+        linear-gradient(140deg, #0b1728 0%, #0a2038 40%, #071322 100%);
+      border: 1px solid #1d291e;
+      border-radius: 3px;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    .desk::before { height: 18px; }
+    .desk::after { font-size: 9px; bottom: 1px; }
+    .desk-titlebar { top: 4px; font-size: 9px; }
+    .desk-icons { top: 26px; gap: 8px; }
+    .desk-icon { width: 54px; font-size: 8.5px; }
+    .desk-icon .folder-shape,
+    .desk-icon .file-shape { width: 28px; height: 24px; }
+    .desk-icon .file-shape::before { border-top-width: 7px; border-left-width: 7px; }
+    .desk-icon .file-shape.py::after { font-size: 7px; left: 2px; bottom: 1px; }
+    .desk-icon .file-shape.txt::after { font-size: 6px; left: 2px; bottom: 1px; }
+    .desk-new-file {
+      left: 74px; top: 26px;
+      width: 54px; font-size: 8.5px;
+    }
+    .desk-new-file .file-shape { width: 28px; height: 24px; }
+    .desk-new-file .file-shape::before { border-top-width: 7px; border-left-width: 7px; }
+    .desk-new-file .file-shape.py::after { font-size: 7px; left: 2px; bottom: 1px; }
+    .desk-preview {
+      width: 60%; max-width: 170px; padding: 6px 8px;
+      font-size: 9.5px;
+    }
+    .desk::before {
+      /* taskbar */
+      content: '';
+      position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+      background: rgba(6,12,22,.92);
+      border-top: 1px solid rgba(120,170,220,.25);
+      z-index: 3;
+    }
+    .desk::after {
+      /* start button + clock hints */
+      content: '⊞    ⏱ 14:32';
+      position: absolute; left: 10px; right: 10px; bottom: 4px;
+      font: 11px var(--mono); color: #b9d3ee; letter-spacing: .06em;
+      display: flex; justify-content: space-between; z-index: 4;
+      pointer-events: none;
+    }
+    .desk-titlebar {
+      position: absolute; top: 8px; left: 10px; right: 10px;
+      display: flex; justify-content: space-between;
+      font: 10.5px var(--mono); color: #7da2c7; letter-spacing: .08em;
+      text-transform: uppercase; z-index: 2;
+    }
+    .desk-titlebar span:first-child { color: var(--green); }
+
+    /* Desktop icons area */
+    .desk-icons {
+      position: absolute; left: 12px; top: 40px;
+      display: flex; flex-direction: column; gap: 14px;
+      z-index: 2;
+    }
+    .desk-icon {
+      width: 74px; text-align: center; color: #cfe2f4;
+      font: 10.5px var(--mono);
+      transition: transform .3s, opacity .3s;
+    }
+    .desk-icon .folder-shape,
+    .desk-icon .file-shape {
+      width: 40px; height: 34px; margin: 0 auto 4px;
+      position: relative;
+    }
+    .desk-icon .folder-shape {
+      background: linear-gradient(180deg, #f0c25a, #c79022);
+      border-radius: 2px;
+    }
+    .desk-icon .folder-shape::before {
+      content: ''; position: absolute; left: 3px; top: -6px;
+      width: 16px; height: 8px; background: #f0c25a; border-radius: 2px 2px 0 0;
+    }
+    .desk-icon .file-shape {
+      background: #e8eef7; border-radius: 2px;
+      border: 1px solid #b9c6d8;
+      transform: translateY(-1px);
+    }
+    .desk-icon .file-shape::before {
+      content: ''; position: absolute; right: -1px; top: -1px;
+      border-top: 10px solid #b9c6d8; border-left: 10px solid transparent;
+    }
+    .desk-icon .file-shape.py::after {
+      content: 'PY'; position: absolute; left: 4px; bottom: 2px;
+      color: #2c5d2c; font: bold 9px var(--mono);
+    }
+    .desk-icon .file-shape.txt::after {
+      content: 'TXT'; position: absolute; left: 3px; bottom: 2px;
+      color: #2c5d2c; font: bold 8px var(--mono);
+    }
+
+    /* The new file appearing */
+    .desk-new-file {
+      position: absolute;
+      left: 74px;
+      top: 40px;
+      width: 74px; text-align: center; color: #cfe2f4;
+      font: 10.5px var(--mono);
+      opacity: 0; transform: scale(.4);
+      z-index: 5;
+    }
+    .desk-new-file .file-shape {
+      width: 40px; height: 34px; margin: 0 auto 4px;
+      position: relative;
+      background: #e8eef7; border-radius: 2px;
+      border: 1px solid #b9c6d8;
+    }
+    .desk-new-file .file-shape::before {
+      content: ''; position: absolute; right: -1px; top: -1px;
+      border-top: 10px solid #b9c6d8; border-left: 10px solid transparent;
+    }
+    .desk-new-file .file-shape.py::after {
+      content: 'PY'; position: absolute; left: 4px; bottom: 2px;
+      color: #2c5d2c; font: bold 9px var(--mono);
+    }
+    .desk-new-file.show {
+      animation: fileAppear .8s cubic-bezier(.2,.9,.3,1.4) forwards;
+    }
+    @keyframes fileAppear {
+      0%   { opacity: 0; transform: scale(.3) rotate(-8deg); }
+      60%  { opacity: 1; transform: scale(1.15) rotate(2deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0); }
+    }
+    .desk-new-file.highlight .file-shape {
+      box-shadow: 0 0 18px rgba(168,240,106,.9), 0 0 34px rgba(168,240,106,.4);
+      border-color: var(--green);
+    }
+
+    /* File "opening" preview (floats center) */
+    .desk-preview {
+      position: absolute;
+      left: 76%; top: 56%; transform: translate(-50%, -50%) scale(.9);
+      width: 62%; max-width: 200px;
+      background: #0d140e; border: 1px solid var(--green);
+      border-radius: 3px; padding: 6px 8px;
+      font: 10px/1.5 var(--mono); color: #c3d0bf;
+      box-shadow: 0 0 30px rgba(168,240,106,.35);
+      opacity: 0; transition: opacity .35s, transform .35s;
+      z-index: 6;
+    }
+    .desk-preview.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    .desk-preview .pv-bar {
+      display: flex; justify-content: space-between; color: var(--muted);
+      border-bottom: 1px solid #1d291e; padding-bottom: 4px; margin-bottom: 6px;
+      font-size: 10px;
+    }
+    .desk-preview .pv-bar b { color: var(--green); font-weight: 400; }
+
+    /* MIDDLE — buffer rail */
+    .buffer-rail {
+      position: relative; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 9px; padding: 12px 6px;
+      background: linear-gradient(180deg, #060a06, #0a100a);
+      border-left: 1px solid #1d291e; border-right: 1px solid #1d291e;
+    }
+    .buffer-icon {
+      width: 36px; height: 46px; border: 2px solid var(--line-bright);
+      border-radius: 3px; position: relative; background: #0b100b;
+      display: grid; place-items: center; color: var(--dim); font: 8.5px var(--mono);
+      transition: border-color .25s, box-shadow .25s, color .25s;
+    }
+    .buffer-icon::before {
+      content: ''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+      width: 16px; height: 6px; border: 2px solid var(--line-bright);
+      border-bottom: none; border-radius: 3px 3px 0 0; background: #050705;
+      transition: border-color .25s;
+    }
+    .buffer-icon.filled {
+      border-color: var(--green); color: var(--green);
+      box-shadow: 0 0 20px rgba(168,240,106,.35);
+    }
+    .buffer-icon.filled::before { border-color: var(--green); }
+    .buffer-label { font: 9px var(--mono); color: var(--dim); letter-spacing: .1em; text-transform: uppercase; }
+    .flow-arrow { color: var(--dim); font: 14px var(--mono); line-height: 1; transition: color .3s; }
+    .flow-arrow.active { color: var(--green); text-shadow: 0 0 10px rgba(168,240,106,.6); }
+    .paste-flash {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: var(--green); font: 9px var(--mono); opacity: 0; pointer-events: none;
+      white-space: nowrap;
+    }
+    .paste-flash.show { animation: flashUp .9s; }
+    @keyframes flashUp {
+      0% { opacity: 0; transform: translate(-50%,-40%); }
+      30% { opacity: 1; transform: translate(-50%,-60%); }
+      100% { opacity: 0; transform: translate(-50%,-90%); }
+    }
+
+    /* RIGHT — Undo terminal */
+    .undo-pane {
+      display: flex; flex-direction: column; padding: 12px 12px 8px;
+      border-left: 1px dashed #233023; background: #050705;
+    }
+    .pane-title {
+      color: var(--dim); font: 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+      display: flex; justify-content: space-between; margin-bottom: 8px;
+    }
+    .pane-title span:last-child { color: var(--green); }
+    .undo-box {
+      flex: 1; border: 1px solid var(--line); background: #050705;
+      padding: 10px 12px; font: 11.5px/1.85 var(--mono); color: #c3d0bf;
+      overflow: hidden; position: relative;
+    }
+    .undo-titlebar {
+      display: flex; justify-content: space-between; color: var(--muted);
+      border-bottom: 1px solid #1d291e; padding-bottom: 6px; margin-bottom: 8px;
+      font-size: 10.5px;
+    }
+    .undo-line { display: flex; gap: 8px; opacity: 0; }
+    .undo-line .t { color: #586657; flex: 0 0 46px; }
+    .undo-line.show { animation: msgIn .35s forwards; }
+    .u-green { color: var(--green); }
+    .u-blue { color: #8bc7e9; }
+    .u-muted { color: #758273; }
+    .undo-caret { display: inline-block; width: 7px; height: 12px; background: var(--green); vertical-align: middle; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes msgIn { to { opacity: 1; } }
+
+    /* Floating cursor */
+    .stage-cursor {
+      position: absolute; top: 0; left: 0; width: 16px; height: 16px;
+      pointer-events: none; transition: transform 1s cubic-bezier(.5,.05,.3,1), opacity .3s;
+      opacity: 0; z-index: 20;
+    }
+    .stage-cursor::after {
+      content: ''; position: absolute; inset: 0;
+      background: var(--green); clip-path: polygon(0 0, 0 70%, 25% 55%, 45% 90%, 60% 80%, 40% 48%, 70% 45%);
+      filter: drop-shadow(0 0 5px rgba(168,240,106,.95));
+    }
+    .stage-cursor.click::before {
+      content: ''; position: absolute; inset: -10px; border-radius: 50%;
+      border: 1px solid var(--green); opacity: 0; animation: clickPulse .5s;
+    }
+    @keyframes clickPulse {
+      0% { opacity: 1; transform: scale(.4); }
+      100% { opacity: 0; transform: scale(1); }
+    }
+
+    /* Step counter badge */
+    .stage-step {
+      position: absolute; top: 8px; right: 10px;
+      font: 10px var(--mono); color: var(--dim); letter-spacing: .1em;
+      background: rgba(5,7,5,.7); border: 1px solid #1d291e;
+      padding: 3px 8px; border-radius: 2px; z-index: 15;
+    }
+    .stage-step b { color: var(--green); font-weight: 400; }
+
+    /* Browser pane */
+    .browser {
+      display: flex; flex-direction: column;
+      background: #0a0e14;
+      border-right: 1px dashed #233023;
+      overflow: hidden;
+    }
+    .browser-chrome {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 9px;
+      background: #121821;
+      border-bottom: 1px solid #1c2530;
+      font: 10px var(--mono); color: #7d97b6;
+    }
+    .browser-lights { display: flex; gap: 4px; }
+    .browser-lights i { width: 7px; height: 7px; border-radius: 50%; background: #3a4a5e; }
+    .browser-lights i:first-child { background: #db7163; }
+    .browser-lights i:nth-child(2) { background: #dbbb5c; }
+    .browser-lights i:nth-child(3) { background: #77bd67; }
+    .browser-url {
+      flex: 1; display: flex; align-items: center; gap: 6px;
+      background: #0a0e14; border: 1px solid #1c2530;
+      border-radius: 10px; padding: 2px 10px;
+      font: 10px var(--mono); color: #b9d3ee;
+      max-width: 200px;
+    }
+    .browser-url .lock { color: #77bd67; }
+    .browser-menu { color: #7d97b6; cursor: default; }
+    .browser-page {
+      flex: 1; padding: 12px 12px 8px;
+      display: flex; flex-direction: column; gap: 9px;
+      background: radial-gradient(ellipse at 30% 0%, rgba(80,140,220,.10), transparent 60%), #080b10;
+      overflow: hidden;
+      max-height: 460px;
+    }
+    .chat-msg div { margin-top: 2px; }
+    .chat-code { margin-top: 5px; }
+    .chat-msg { font: 11.5px/1.6 var(--mono); color: #c3d0bf; opacity: 0; }
+    .chat-msg.show { animation: msgIn .45s forwards; }
+    .chat-msg .who {
+      display: inline-block; font-size: 9.5px; letter-spacing: .1em;
+      padding: 1px 5px; border-radius: 2px; margin-bottom: 4px;
+    }
+    .chat-user .who { background: #123a2c; color: #a8f06a; }
+    .chat-ai .who { background: #123048; color: #8bc7e9; }
+    .chat-user div { color: #cfe0d7; }
+    .chat-ai div { color: #c3d0bf; }
+    .chat-code {
+      position: relative; margin-top: 6px; padding: 8px 10px;
+      border: 1px solid var(--line); background: #0d140e;
+      color: var(--green); font: 11px/1.7 var(--mono); white-space: pre;
+      border-radius: 3px;
+    }
+    .chat-code.active {
+      border-color: var(--green);
+      box-shadow: 0 0 16px rgba(168,240,106,.35);
+    }
+    .chat-code .copy-btn {
+      position: absolute; top: 4px; right: 4px;
+      border: 1px solid var(--line-bright); background: #101711;
+      color: var(--green); font: 9px var(--mono);
+      padding: 2px 6px; cursor: pointer;
+    }
+    .browser-status {
+      margin-top: auto; padding-top: 6px;
+      border-top: 1px solid #1c2530;
+      color: var(--dim); font: 10px var(--mono); letter-spacing: .04em;
+    }
+    .browser-status.live { color: var(--green); }
+    .pasted-text {
+      margin-top: 4px; padding: 6px 9px;
+      border-left: 2px solid #3a5e8a;
+      background: #0d1620; color: #b9d3ee;
+      font: 10.5px/1.5 var(--mono); border-radius: 0 3px 3px 0;
+    }
+    .chat-ai-confirm b { color: var(--green); font-weight: 500; }
+
+    /* STATUS GRID */
+    .status-grid { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid var(--line); }
+    .status-cell { min-height: 82px; padding: 15px 18px; border-right: 1px solid var(--line); background: rgba(13,18,14,.8); }
+    .status-cell:last-child { border-right: 0; }
+    .status-cell strong { display: block; color: var(--green); font: 18px var(--mono); }
+    .status-cell span { color: var(--dim); font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+
+    section.content-section { padding: 84px 0; border-top: 1px solid var(--line); }
+    .section-head { max-width: 730px; margin-bottom: 33px; }
+    h2 { margin: 12px 0 13px; font-size: clamp(30px,4vw,47px); line-height: 1.12; letter-spacing: -.05em; }
+    .intro { margin: 0; color: var(--muted); line-height: 1.8; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+    .card {
+      position: relative; padding: 21px; border: 1px solid var(--line); background: var(--surface);
+      transition: border-color .18s, transform .18s, background .18s;
+    }
+    .card:hover { transform: translateY(-3px); border-color: var(--line-bright); background: #111912; }
+    .card-index { color: var(--green); font: 12px var(--mono); }
+    .card h3 { margin: 15px 0 7px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.75; }
+    .split { display: grid; grid-template-columns: .82fr 1.18fr; gap: 44px; align-items: start; }
+    .command-list { display: grid; gap: 8px; }
+    .command {
+      display: flex; justify-content: space-between; gap: 15px; align-items: center;
+      padding: 12px 14px; border: 1px solid var(--line); background: var(--surface);
+    }
+    .command code { color: var(--green); font: 12px var(--mono); }
+    .command span { color: var(--dim); font: 11px var(--mono); text-align: right; }
+
+    .demo-window { overflow: hidden; border: 1px solid var(--line-bright); background: #070a08; }
+    .demo-tabs { display: flex; border-bottom: 1px solid var(--line); background: #101610; }
+    .demo-tab {
+      padding: 11px 14px; border: 0; border-right: 1px solid var(--line);
+      color: var(--muted); background: transparent; cursor: pointer; font: 12px var(--mono);
+    }
+    .demo-tab.active { color: var(--green); background: #151e16; }
+    .demo-content { min-height: 205px; padding: 19px; font: 12px/1.9 var(--mono); color: #b9c8b4; }
+    .demo-content .prompt { color: var(--green); }
+    .demo-content .output { color: #8c9a89; }
+    .demo-content .success { color: var(--green); }
+
+    /* Manifest block */
+    .manifest {
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: #090d0a;
+      color: #aebba9;
+      font: 12px/1.9 var(--mono);
+      white-space: pre-wrap;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .manifest .m-green { color: var(--green); }
+    .manifest .m-dim   { color: var(--dim); }
+
+    /* Manifest block */
+    .manifest {
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: #090d0a;
+      color: #aebba9;
+      font: 12px/1.9 var(--mono);
+      white-space: pre-wrap;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .manifest .m-green { color: var(--green); }
+    .manifest .m-dim   { color: var(--dim); }
+
+    /* Manifest block (used inside #memory and #help sections) */
+    .manifest {
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: #090d0a;
+      color: #aebba9;
+      font: 12px/1.9 var(--mono);
+      white-space: pre-wrap;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .manifest .m-green { color: var(--green); }
+    .manifest .m-dim   { color: var(--dim); }
+    .demo-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); }
+    .demo-hint { color: var(--dim); font: 11px var(--mono); }
+    .copy-button { border: 1px solid var(--line-bright); padding: 6px 10px; color: var(--green); background: transparent; cursor: pointer; font: 11px var(--mono); }
+    .copy-button:hover { border-color: var(--green); }
+
+    .safety {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center;
+      padding: 30px; border: 1px solid var(--line-bright);
+      background: linear-gradient(115deg, rgba(168,240,106,.075), rgba(13,18,14,.92) 58%);
+    }
+    .backup-stack { display: grid; gap: 8px; }
+    .backup-row {
+      display: flex; gap: 12px; align-items: center; padding: 12px;
+      border: 1px solid var(--line); background: rgba(5,8,6,.6); font: 11px var(--mono);
+    }
+    .backup-row .check { color: var(--green); }
+    .backup-row .filename { color: #b8c6b3; }
+    .backup-row .saved { margin-left: auto; color: var(--dim); }
+
+    .faq { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    details { border: 1px solid var(--line); background: var(--surface); }
+    summary { padding: 15px 17px; cursor: pointer; color: var(--white); font-size: 14px; }
+    summary::marker { color: var(--green); }
+    details p { margin: 0; padding: 0 17px 17px; color: var(--muted); font-size: 13px; line-height: 1.75; }
+
+    .final {
+      padding: 94px 20px; border-top: 1px solid var(--line); text-align: center;
+      background: radial-gradient(ellipse at 50% 100%, rgba(87,153,63,.13), transparent 35rem);
+    }
+    .final h2 { max-width: 740px; margin: 13px auto; }
+    .final p { max-width: 570px; margin: 0 auto 25px; color: var(--muted); }
+
+    footer { border-top: 1px solid var(--line); color: var(--dim); font: 11px var(--mono); }
+    .footer-inner { min-height: 68px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .footer-logo { color: var(--green); letter-spacing: .15em; }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; gap: 38px; padding-block: 62px; }
+      .stage { min-height: 420px; }
+      .win-deepseek { left: 3%; top: 4%; width: 56%; height: 82%; }
+      .win-undo { right: 3%; top: 10%; width: 42%; height: 82%; }
+      .grid-4 { grid-template-columns: repeat(2,1fr); }
+      .split { grid-template-columns: 1fr; gap: 25px; }
+      .nav-links { display: none; }
+    }
+    @media (max-width: 620px) {
+      .stage { min-height: 340px; }
+      .win-deepseek { left: 2%; top: 3%; width: 62%; height: 86%; }
+      .win-undo { right: 2%; top: 8%; width: 48%; height: 86%; }
+      .clip-flow { top: 50%; }
+      .buffer-icon { width: 30px; height: 38px; }
+      .desk-icons-bg { transform: scale(.75); transform-origin: top left; }
+      .desk-new-file { left: 60px; transform: scale(.75); }
+      .desk-preview { left: 6%; top: 66%; width: 44%; font-size: 9px; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 28px,1200px); }
+      .status-grid { grid-template-columns: 1fr 1fr; }
+      .status-cell:nth-child(2) { border-right: 0; }
+      .status-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .grid-3, .grid-4, .faq { grid-template-columns: 1fr; }
+      .safety { grid-template-columns: 1fr; padding: 21px; }
+      .footer-inner { padding-block: 16px; flex-direction: column; align-items: flex-start; gap: 4px; }
+      h1 { font-size: 44px; }
+    }
+
+    /* SCREENSHOTS SECTION */
+    .shots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 40px;
+    }
+    .shot {
+      margin: 0;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 4px;
+      overflow: hidden;
+      transition: border-color .18s, transform .18s;
+    }
+    .shot:hover {
+      border-color: var(--line-bright);
+      transform: translateY(-3px);
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+      filter: contrast(1.05) saturate(.95);
+      border-bottom: 1px solid var(--line);
+      background: #05070a;
+      min-height: 140px;
+      object-fit: cover;
+    }
+    .shot figcaption {
+      padding: 12px 14px;
+      color: var(--muted);
+      font: 12px/1.6 var(--mono);
+    }
+    @media (max-width: 900px) {
+      .shots { grid-template-columns: 1fr; }
+    }
+
+    /* Inline code inside intro text */
+    .intro code {
+      background: #0d140e;
+      border: 1px solid var(--line);
+      color: var(--green);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font: 13px var(--mono);
+    }
+
+    /* Download section */
+    #download .button.primary {
+      display: inline-flex;
+      font-size: 15px;
+      padding: 14px 26px;
+      min-height: 52px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    #download .status-grid {
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    #download .status-cell {
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <div class="topline">
+    <div class="shell topline-inner">
+      <span>UNDO AGENT <span style="color:#40583f">/</span> LOCAL WORKSPACE</span>
+      <span class="top-status">● SYSTEM READY</span>
+    </div>
+  </div>
+
+  <header class="shell">
+    <nav class="nav">
+      <a class="brand" href="#" aria-label="UNDO — top of page">
+        <span class="brand-icon">↶</span><span>UNDO</span>
+      </a>
+      <div class="nav-right">
+        <div class="nav-links">
+          <a href="#capabilities" data-i18n="nav.capabilities">Capabilities</a>
+          <a href="#toolbar" data-i18n="nav.toolbar">Menu</a>
+          <a href="#commands" data-i18n="nav.commands">Commands</a>
+          <a href="#workflow" data-i18n="nav.workflow">Workflow</a>
+          <a href="#manifest" data-i18n="nav.manifest">Manifest</a>
+          <a href="#help" data-i18n="nav.help">Help</a>
+        </div>
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button data-lang="en" class="active">EN</button>
+          <button data-lang="ru">RU</button>
+          <button data-lang="zh">ZH</button>
+        </div>
+        <a class="nav-cta" href="#download" data-i18n="nav.download">DOWNLOAD <span>↓</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <div class="shell">
+      <section class="hero">
+        <div>
+          <div class="kicker" data-i18n="hero.kicker">command station for AI</div>
+          <h1><span data-i18n="hero.title1">Give AI</span><br><span data-i18n="hero.title2">access to</span> <span class="accent" data-i18n="hero.title3">work.</span></h1>
+          <p class="hero-copy" data-i18n="hero.copy">UNDO is a local agent that turns AI requests into real file operations. Read code, create structure, fix errors and manage the project through short, clear commands.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#workflow"><span data-i18n="hero.cta1">SEE HOW IT WORKS</span> <span>→</span></a>
+            <a class="button" href="#capabilities" data-i18n="hero.cta2">CAPABILITIES</a>
+          </div>
+          <div class="hero-note"><span>›</span> FILES &nbsp;·&nbsp; CONTEXT &nbsp;·&nbsp; BACKUPS &nbsp;·&nbsp; CHECKS</div>
+        </div>
+
+        <!-- ============== LIVE ANIMATION STAGE — FULL DESKTOP ============== -->
+        <div class="stage" id="stage" aria-label="Undo live animation">
+          <div class="stage-step"><b id="stage-step-label">STEP 1 / 6</b></div>
+
+          <!-- Windows taskbar at the bottom -->
+          <div class="taskbar">
+            <div class="start-btn">⊞</div>
+            <div class="task-item active">chat.deepseek.com</div>
+            <div class="task-item">↶ Undo</div>
+            <div class="task-spacer"></div>
+            <div class="task-clock">14:32</div>
+          </div>
+
+          <!-- App window #1 — DeepSeek in browser -->
+          <div class="window-app win-deepseek" id="browser">
+            <div class="win-chrome">
+              <div class="win-lights"><i></i><i></i><i></i></div>
+              <div class="win-url">
+                <span class="lock">🔒</span>
+                <span>chat.deepseek.com</span>
+              </div>
+              <div class="win-menu">⋮</div>
+            </div>
+            <div class="browser-page">
+              <div class="chat-msg chat-user" id="msg-user">
+                <span class="who">YOU</span>
+                <div>Create a Python script that prints hello</div>
+              </div>
+              <div class="chat-msg chat-ai" id="msg-ai">
+                <span class="who">AI</span>
+                <div>Sure — copy this block:</div>
+                <div class="chat-code" id="msg-code">
+                  <button class="copy-btn" id="copy-btn-visual">COPY</button>
+FILE: hello.py
+print("hello world")
+                </div>
+              </div>
+              <div class="chat-msg chat-user" id="msg-result">
+                <span class="who">YOU</span>
+                <div class="pasted-text">saved: hello.py (0.1K)<br>syntax: OK · Python</div>
+              </div>
+              <div class="chat-msg chat-ai" id="msg-ai-confirm">
+                <span class="who">AI</span>
+                <div>✓ I see it — <b>hello.py</b> created, syntax OK. Ready for the next step.</div>
+              </div>
+              <div class="browser-status" id="browser-status">● waiting for input…</div>
+            </div>
+          </div>
+
+          <!-- App window #2 — Undo terminal -->
+          <div class="window-app win-undo">
+            <div class="win-chrome">
+              <div class="win-lights"><i></i><i></i><i></i></div>
+              <div class="win-title">↶ Undo — Project Terminal</div>
+              <div class="win-menu">—</div>
+            </div>
+            <div class="undo-box" id="undo-box">
+              <div class="undo-line" id="u1"><span class="t" id="t1"></span><span class="u-muted">clip(1) &gt; </span><span class="u-green" id="u1txt"></span></div>
+              <div class="undo-line" id="u2"><span class="t" id="t2"></span><span class="u-blue" id="u2txt"></span></div>
+              <div class="undo-line" id="u3"><span class="t" id="t3"></span><span class="u-muted" id="u3txt"></span></div>
+              <div class="undo-line" id="u4"><span class="t" id="t4"></span><span class="u-green" id="u4txt"></span></div>
+              <div class="undo-line" id="u5"><span class="t" id="t5"></span><span class="u-muted">&gt; </span><span class="undo-caret"></span></div>
+            </div>
+          </div>
+
+          <!-- Desktop icons visible on the wallpaper (behind windows) -->
+          <div class="desk-icons-bg">
+            <div class="desk-icon">
+              <div class="folder-shape"></div>
+              <div>Project</div>
+            </div>
+            <div class="desk-icon">
+              <div class="file-shape txt"></div>
+              <div>readme.txt</div>
+            </div>
+          </div>
+
+          <!-- File that appears on the desktop -->
+          <div class="desk-new-file" id="desk-new-file">
+            <div class="file-shape py"></div>
+            <div>hello.py</div>
+          </div>
+
+          <!-- Clipboard flow indicator (between windows) -->
+          <div class="clip-flow" id="buffer-rail">
+            <div class="buffer-icon" id="buffer-icon">EMPTY</div>
+            <div class="paste-flash" id="paste-flash">PASTE</div>
+          </div>
+
+          <!-- Preview of the created file -->
+          <div class="desk-preview" id="desk-preview">
+            <div class="pv-bar"><b>hello.py</b><span>— □ ×</span></div>
+            <div>print("hello world")</div>
+          </div>
+
+          <!-- Floating cursor -->
+          <div class="stage-cursor" id="stage-cursor"></div>
+        </div>
+      </section>
+
+      <div class="status-grid">
+        <div class="status-cell"><strong>18+</strong><span data-i18n="stat1">project tools</span></div>
+        <div class="status-cell"><strong>AUTO</strong><span data-i18n="stat2">backup before change</span></div>
+        <div class="status-cell"><strong>LIVE</strong><span data-i18n="stat3">log for every command</span></div>
+        <div class="status-cell"><strong>LOCAL</strong><span data-i18n="stat4">agent on your machine</span></div>
+      </div>
+    </div>
+
+    <section id="capabilities" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="cap.kicker">beyond ordinary chat</div>
+          <h2><span data-i18n="cap.title1">AI suggests.</span><br><span data-i18n="cap.title2">UNDO executes.</span></h2>
+          <p class="intro" data-i18n="cap.intro">Instead of “open the file and paste this code” — a command that does the work. Instead of guesses — the actual content of the project. Instead of the risk of losing changes — backups and rollback.</p>
+        </div>
+        <div class="grid-3">
+          <article class="card"><div class="card-index">[ 01 ]</div><h3 data-i18n="cap1.h">Full access to project operations</h3><p data-i18n="cap1.p">Create, read, search, rename, delete and precisely edit files. Folders, project tree, statistics and hashes — also through commands.</p></article>
+          <article class="card"><div class="card-index">[ 02 ]</div><h3 data-i18n="cap2.h">Context that never gets lost</h3><p data-i18n="cap2.p">Project description, log, tasks, notes and decisions are stored together. The CTX command assembles them for the AI.</p></article>
+          <article class="card"><div class="card-index">[ 03 ]</div><h3 data-i18n="cap3.h">Change management</h3><p data-i18n="cap3.p">A backup before every edit, diff against the previous version, file restore and storage configuration. Experiment and roll back.</p></article>
+          <article class="card"><div class="card-index">[ 04 ]</div><h3 data-i18n="cap4.h">Result validation on the spot</h3><p data-i18n="cap4.p">Syntax checks for Python, JSON, HTML and JavaScript. After EDIT you immediately see whether the check passed.</p></article>
+          <article class="card"><div class="card-index">[ 05 ]</div><h3 data-i18n="cap5.h">Diagnostics without switching</h3><p data-i18n="cap5.p">Search text and regular expressions, open the needed lines, inspect project state and read the log right in the working loop.</p></article>
+          <article class="card"><div class="card-index">[ 06 ]</div><h3 data-i18n="cap6.h">Data for the next step</h3><p data-i18n="cap6.p">Context, logs and command results are returned to the clipboard. Paste the answer into the chat — the AI continues concretely.</p></article>
+          <article class="card"><div class="card-index">[ 07 ]</div><h3 data-i18n="cap7.h">Ctrl+C works in any layout</h3><p data-i18n="cap7.p">Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode, so they work in Russian, Chinese, or any other keyboard layout — no switching needed.</p></article>
+          <article class="card"><div class="card-index">[ 08 ]</div><h3 data-i18n="cap8.h">Undo can rewrite itself</h3><p data-i18n="cap8.p">Edit Undo’s own source with Undo. It saves a backup, checks the syntax, and restarts itself in place — the tool is its own test case.</p></article>
+          <article class="card"><div class="card-index">[ 09 ]</div><h3 data-i18n="cap9.h">Three languages, one click</h3><p data-i18n="cap9.p">The entire UI — menus, logs, manifest — switches between English, Russian and Chinese. Undo restarts itself and comes back in the chosen language.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="terminal" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="term.kicker">not just an AI bridge</div>
+          <h2><span data-i18n="term.title1">Undo is also a</span> <span class="accent" data-i18n="term.title2">terminal.</span></h2>
+          <p class="intro" data-i18n="term.intro">Type anything that doesn’t look like an AI command — and it goes straight to <code>cmd.exe</code>, with the output in the same log. Switch between working with AI and working with your machine without leaving the window.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1.15fr .85fr; align-items:start;">
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active" data-term="shell">SHELL</button>
+              <button class="demo-tab" data-term="calc">CALC</button>
+              <button class="demo-tab" data-term="nav">NAVIGATE</button>
+            </div>
+            <div class="demo-content" id="term-content" style="min-height:190px;">
+              <div class="prompt">&gt; dir</div>
+              <div class="output">  app.py       2.1K</div>
+              <div class="output">  config.json  0.4K</div>
+              <div class="output">  readme.md    0.8K</div>
+              <div class="success">  (no command marker)</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" data-i18n="term.hint">TYPE ANYTHING — IT GOES TO CMD.EXE</span>
+            </div>
+          </div>
+
+          <div class="command-list">
+            <div class="command"><code>dir</code><span data-i18n="term.c1">list files</span></div>
+            <div class="command"><code>cd ..</code><span data-i18n="term.c2">change folder</span></div>
+            <div class="command"><code>echo hi</code><span data-i18n="term.c3">echo</span></div>
+            <div class="command"><code>python -V</code><span data-i18n="term.c4">python</span></div>
+            <div class="command"><code>pip list</code><span data-i18n="term.c5">pip</span></div>
+            <div class="command"><code>powershell …</code><span data-i18n="term.c6">powershell</span></div>
+            <div class="command"><code>clear</code><span data-i18n="term.c7">clear log</span></div>
+            <div class="command"><code>help</code><span data-i18n="term.c8">list commands</span></div>
+            <div class="command"><code>↑ / ↓</code><span data-i18n="term.c9">command history</span></div>
+            <div class="command"><code>CALC: 2**16</code><span data-i18n="term.c10">safe calculator</span></div>
+          </div>
+        </div>
+
+        <div class="section-head" style="margin-top:48px;">
+          <div class="kicker" data-i18n="term.k2">shortcuts that just work</div>
+          <h2 style="font-size:clamp(22px,2.6vw,28px);" data-i18n="term.t2">Like a real terminal — but friendlier.</h2>
+        </div>
+
+        <div class="grid-3">
+          <article class="card"><div class="card-index">↑ ↓</div><h3 data-i18n="term.hist.h">Command history</h3><p data-i18n="term.hist.p">Arrow keys cycle through what you typed. Same as in bash — just tap up and hit Enter.</p></article>
+          <article class="card"><div class="card-index">RIGHT-CLICK</div><h3 data-i18n="term.rc.h">Context menu everywhere</h3><p data-i18n="term.rc.p">In the log: copy selection, copy the whole log, clear, show clipboard, paste to input. In the input line: cut, copy, paste, select all, clear.</p></article>
+          <article class="card"><div class="card-index">CTRL</div><h3 data-i18n="term.ctrl.h">Works in any layout</h3><p data-i18n="term.ctrl.p">Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode. Russian, Chinese, German — same keys, same behaviour.</p></article>
+          <article class="card"><div class="card-index">CMD: open</div><h3 data-i18n="term.open.h">Open a file with the system app</h3><p data-i18n="term.open.p"><code>CMD: open report.pdf</code> — Undo calls the default handler. PDF in the viewer, .py in the editor, image in the gallery.</p></article>
+          <article class="card"><div class="card-index">CMD: run</div><h3 data-i18n="term.run.h">Launch any program</h3><p data-i18n="term.run.p"><code>CMD: run calc</code> — and the Windows calculator opens. Anything the shell can start, Undo can start.</p></article>
+          <article class="card"><div class="card-index">CMD: folder</div><h3 data-i18n="term.folder.h">Jump to the Undo folder</h3><p data-i18n="term.folder.p"><code>CMD: folder</code> opens the folder where Undo lives — logs, backups, shots, config. One click from the terminal.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="toolbar" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="tb.kicker">not only commands</div>
+          <h2 data-i18n="tb.title">Everything in one click.</h2>
+          <p class="intro" data-i18n="tb.intro">Undo is not just a command runner. The top menu gives you the same operations as buttons — a screenshot, the project context, the whole log, the manifest for the AI. No typing needed.</p>
+        </div>
+
+        <div class="grid-3">
+          <article class="card">
+            <div class="card-index">AI</div>
+            <h3 data-i18n="tb.ai1h">📋 Copy manifest for AI</h3>
+            <p data-i18n="tb.ai1p">The very first item in the AI menu. Click it once — the manifest is in your clipboard, ready to paste into any chat.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">TOOLS</div>
+            <h3 data-i18n="tb.t1h">Screenshot (window)</h3>
+            <p data-i18n="tb.t1p">One click — the active window goes straight to the clipboard as an image. No command, no filename, no path.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">TOOLS</div>
+            <h3 data-i18n="tb.t2h">Screenshot (full screen)</h3>
+            <p data-i18n="tb.t2p">Same, for the whole desktop. Ctrl+V into any chat — the AI sees everything.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">TOOLS</div>
+            <h3 data-i18n="tb.t3h">📋 Copy context (CTX)</h3>
+            <p data-i18n="tb.t3p">Assemble the whole project memory — description, errors, tasks, log — and put it on the clipboard in one click.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">TOOLS</div>
+            <h3 data-i18n="tb.t4h">📋 Copy log</h3>
+            <p data-i18n="tb.t4p">The full session log, ready to paste. Useful when something went wrong and you want the AI to see it.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">FILE</div>
+            <h3 data-i18n="tb.f1h">Open Folder · Recent</h3>
+            <p data-i18n="tb.f1p">Pick a project folder or jump to one of the last twenty. Undo remembers where you worked.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">FILE</div>
+            <h3 data-i18n="tb.f2h">Edit Description…</h3>
+            <p data-i18n="tb.f2p">Write what this project is about. It lands in <code>.agent/desc.md</code> and travels with the context every time.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">SETTINGS</div>
+            <h3 data-i18n="tb.s1h">Font &amp; Language</h3>
+            <p data-i18n="tb.s1p">Three fonts — VT323, Consolas, Courier New. Three languages — EN, RU, ZH. Undo restarts itself and comes back with your choice.</p>
+          </article>
+          <article class="card">
+            <div class="card-index">FILE</div>
+            <h3 data-i18n="tb.f3h">Remembers everything</h3>
+            <p data-i18n="tb.f3p">Window size, position, recent projects, current project, chosen font and language — all restored on next launch.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="shots" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="shots.kicker">AI can see your screen</div>
+          <h2 data-i18n="shots.title1">Show, don’t describe.</h2>
+          <p class="intro" data-i18n="shots.intro">The <code>SHOT</code> command takes a screenshot and puts it straight into the clipboard — as an image, not text. Paste it into any chat and the AI sees exactly what you see. No plugins, no screen-share, no permissions.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1.1fr .9fr; align-items:start;">
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active" data-shot="window">SHOT</button>
+              <button class="demo-tab" data-shot="full">SHOT: full</button>
+              <button class="demo-tab" data-shot="named">SHOT: "Chrome"</button>
+            </div>
+            <div class="demo-content" id="shot-content" style="min-height:180px;">
+              <div class="prompt">SHOT:</div>
+              <br>
+              <div class="output">&gt; COMMAND: SHOT</div>
+              <div class="output">capturing active window…</div>
+              <div class="success">saved: shots/shot_20261016_234501.png</div>
+              <div class="success">buffer &lt; [image]</div>
+              <div class="output">paste into any chat — the AI sees it</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" data-i18n="shots.hint">IMAGE GOES TO CLIPBOARD, NOT A FILE PATH</span>
+            </div>
+          </div>
+
+          <div class="command-list">
+            <div class="command"><code>SHOT:</code><span data-i18n="shots.c1">active window</span></div>
+            <div class="command"><code>SHOT: full</code><span data-i18n="shots.c2">whole screen</span></div>
+            <div class="command"><code>SHOT: "Chrome"</code><span data-i18n="shots.c3">window by name</span></div>
+            <div class="command"><code>SHOT: wait=3</code><span data-i18n="shots.c4">after N seconds</span></div>
+            <div class="command"><code>SHOT: save=path.png</code><span data-i18n="shots.c5">save to file</span></div>
+          </div>
+        </div>
+
+        <div class="grid-3" style="margin-top:24px;">
+          <article class="card"><div class="card-index">[ 01 ]</div><h3 data-i18n="shots.u1h">Ask what’s on screen</h3><p data-i18n="shots.u1p">AI writes “SHOT: full”, you press Ctrl+V into the chat. The AI sees the whole desktop — no description needed.</p></article>
+          <article class="card"><div class="card-index">[ 02 ]</div><h3 data-i18n="shots.u2h">Debug without sharing a screen</h3><p data-i18n="shots.u2p">Error in a window? Just <code>SHOT:</code> and paste. Works over any chat, any time, any place.</p></article>
+          <article class="card"><div class="card-index">[ 03 ]</div><h3 data-i18n="shots.u3h">See the rendered result</h3><p data-i18n="shots.u3p">Run a program, take a shot with <code>SHOT: wait=2</code>, paste it. The AI checks layout, colors, and errors visually.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="checks" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="chk.kicker">every edit is verified</div>
+          <h2 data-i18n="chk.title">No blind edits.</h2>
+          <p class="intro" data-i18n="chk.intro">After every EDIT, Undo runs a syntax check on the file. If something is broken, the response says <code>CHECK FAILED</code> — and the AI sees it before you do. Nothing lands on disk silently.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1.1fr .9fr; align-items:start;">
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active">PYTHON</button>
+              <button class="demo-tab">JSON</button>
+              <button class="demo-tab">HTML / JS</button>
+            </div>
+            <div class="demo-content" style="min-height:190px;">
+              <div class="prompt">EDIT: app.py</div>
+              <div class="output">&lt;&lt;&lt;FIND&gt;&gt;&gt;</div>
+              <div class="output">def run():</div>
+              <div class="output">    print("hi")</div>
+              <div class="output">&lt;&lt;&lt;REPLACE&gt;&gt;&gt;</div>
+              <div class="output">def run():</div>
+              <div class="output">    print("hi"</div>
+              <div class="output">&lt;&lt;&lt;END&gt;&gt;&gt;</div>
+              <br>
+              <div class="output">&gt; COMMAND: EDIT</div>
+              <div class="success">ok: applied 1/1 | bak: app.py.bak_edit_...</div>
+              <div class="output" style="color:#ff8888;">CHECK FAILED: SyntaxError: '(' was never closed</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" data-i18n="chk.hint">CHECK RUNS AUTOMATICALLY AFTER EVERY EDIT</span>
+            </div>
+          </div>
+
+          <div class="command-list">
+            <div class="command"><code>.py</code><span data-i18n="chk.c1">py_compile</span></div>
+            <div class="command"><code>.json</code><span data-i18n="chk.c2">json.loads</span></div>
+            <div class="command"><code>.html</code><span data-i18n="chk.c3">&lt;/html&gt;, script balance</span></div>
+            <div class="command"><code>.js</code><span data-i18n="chk.c4">braces &amp; parens</span></div>
+            <div class="command"><code>CHECK: path</code><span data-i18n="chk.c5">manual check anytime</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="safe-edit" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="safe.kicker">transactional edits</div>
+          <h2 data-i18n="safe.title">All blocks or nothing.</h2>
+          <p class="intro" data-i18n="safe.intro">An EDIT can carry multiple FIND/REPLACE blocks. Undo checks every block first. If a single one is missing, nothing is applied — the file never ends up half-edited. And edits are idempotent: applying the same block twice changes nothing the second time.</p>
+        </div>
+
+        <div class="grid-3">
+          <article class="card"><div class="card-index">[ 01 ]</div><h3 data-i18n="safe.h1">Atomic</h3><p data-i18n="safe.p1">All FIND blocks are validated before any write. One missing block → nothing changes. No partial states.</p></article>
+          <article class="card"><div class="card-index">[ 02 ]</div><h3 data-i18n="safe.h2">Idempotent</h3><p data-i18n="safe.p2">If a block is not found, Undo reports it and skips. It never duplicates lines — applying an EDIT twice is a no-op the second time.</p></article>
+          <article class="card"><div class="card-index">[ 03 ]</div><h3 data-i18n="safe.h3">Line-ending safe</h3><p data-i18n="safe.p3">CRLF vs LF is normalised on the fly. A Unix edit applies cleanly to a Windows file without touching the rest.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="selfedit" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="self.kicker">the tool is its own test case</div>
+          <h2 data-i18n="self.title">Undo can rewrite itself.</h2>
+          <p class="intro" data-i18n="self.intro">Edit Undo’s own source with Undo. It saves a backup, runs the syntax check, then restarts itself in place — 800 ms later you’re looking at the new version, same window size and position.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1.1fr .9fr; align-items:start;">
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active">SELF-EDIT</button>
+            </div>
+            <div class="demo-content" style="min-height:180px;">
+              <div class="prompt">EDIT: Undo.py</div>
+              <div class="output">&lt;&lt;&lt;FIND&gt;&gt;&gt;</div>
+              <div class="output">    def _about(self):</div>
+              <div class="output">&lt;&lt;&lt;REPLACE&gt;&gt;&gt;</div>
+              <div class="output">    def _about(self):</div>
+              <div class="output">        text = "Love each other."</div>
+              <div class="output">&lt;&lt;&lt;END&gt;&gt;&gt;</div>
+              <br>
+              <div class="output">&gt; COMMAND: EDIT</div>
+              <div class="success">ok: applied 1/1 | bak: Undo.py.bak_edit_...</div>
+              <div class="success">check: python OK</div>
+              <div class="output" style="color:#ffcc66;">self-edit — restarting...</div>
+              <div class="success">[Undo] ready</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" data-i18n="self.hint">SAME WINDOW · NEW CODE · 800 MS</span>
+            </div>
+          </div>
+
+          <div class="command-list">
+            <div class="command"><code>1</code><span data-i18n="self.s1">edit Undo.py</span></div>
+            <div class="command"><code>2</code><span data-i18n="self.s2">backup &amp; check</span></div>
+            <div class="command"><code>3</code><span data-i18n="self.s3">restart in place</span></div>
+            <div class="command"><code>4</code><span data-i18n="self.s4">same window size</span></div>
+            <div class="command"><code>5</code><span data-i18n="self.s5">new code running</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="commands" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="cmd.kicker">command interface</div>
+          <h2 data-i18n="cmd.title">One line — one action.</h2>
+          <p class="intro" data-i18n="cmd.intro">Commands read like instructions. The first line defines the operation; the following lines contain the path, text or parameters.</p>
+        </div>
+        <div class="split">
+          <div class="command-list">
+            <div class="command"><code>FILE: src/app.py</code><span data-i18n="cmd1">create / replace</span></div>
+            <div class="command"><code>EDIT: src/app.py</code><span data-i18n="cmd3">precise block edit</span></div>
+            <div class="command"><code>APPEND / DELETE</code><span data-i18n="cmd9">append / delete</span></div>
+            <div class="command"><code>RENAME / TOUCH / MKDIR</code><span data-i18n="cmd10">file &amp; folder ops</span></div>
+            <div class="command"><code>READ: src/app.py | 1-80</code><span data-i18n="cmd2">read with lines</span></div>
+            <div class="command"><code>HEAD / TAIL: path | N</code><span data-i18n="cmd11">first / last N</span></div>
+            <div class="command"><code>STAT / COUNT / HASH</code><span data-i18n="cmd12">size, words, md5+sha1</span></div>
+            <div class="command"><code>FIND: path | text</code><span data-i18n="cmd13">search in file</span></div>
+            <div class="command"><code>SEARCH: TODO</code><span data-i18n="cmd4">search project</span></div>
+            <div class="command"><code>REGEX: path | pattern</code><span data-i18n="cmd14">regex search</span></div>
+            <div class="command"><code>LIST / TREE</code><span data-i18n="cmd15">folder / project tree</span></div>
+            <div class="command"><code>CHECK: src/app.py</code><span data-i18n="cmd5">syntax check</span></div>
+            <div class="command"><code>CALC: 2**16</code><span data-i18n="cmd16">safe calculator</span></div>
+            <div class="command"><code>SNIPPET: python_cli</code><span data-i18n="cmd17">18 code templates</span></div>
+            <div class="command"><code>BACKUPS / DIFF</code><span data-i18n="cmd18">list / compare</span></div>
+            <div class="command"><code>↑ ↓</code><span data-i18n="cmd25">command history</span></div>
+            <div class="command"><code>right-click</code><span data-i18n="cmd26">copy / paste menu</span></div>
+            <div class="command"><code>↑ ↓</code><span data-i18n="cmd25">command history</span></div>
+            <div class="command"><code>right-click</code><span data-i18n="cmd26">copy / paste menu</span></div>
+            <div class="command"><code>RESTORE: src/app.py | 1</code><span data-i18n="cmd7">restore version</span></div>
+            <div class="command"><code>CLEANUP / BACKUP_RULE</code><span data-i18n="cmd19">backup retention</span></div>
+            <div class="command"><code>CTX: / NOTE: / TASK:</code><span data-i18n="cmd20">project memory</span></div>
+            <div class="command"><code>REMIND: ctx=30</code><span data-i18n="cmd21">context reminder</span></div>
+            <div class="command"><code>SHOT: / SHOT: full</code><span data-i18n="cmd22">screenshots</span></div>
+            <div class="command"><code>CMD: run / open / folder</code><span data-i18n="cmd23">system commands</span></div>
+            <div class="command"><code>LOG: N</code><span data-i18n="cmd24">last N log lines</span></div>
+          </div>
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active" data-demo="file">FILE</button>
+              <button class="demo-tab" data-demo="search">SEARCH</button>
+              <button class="demo-tab" data-demo="restore">RESTORE</button>
+            </div>
+            <div class="demo-content" id="demo-content">
+              <div class="prompt">FILE: src/hello.py</div>
+              <div>print("hello")</div>
+              <br>
+              <div class="output">&gt; COMMAND: FILE</div>
+              <div class="output">backup created</div>
+              <div class="success">saved: src/hello.py</div>
+              <div class="success">syntax: OK · Python</div>
+              <div class="output">buffer &lt; saved: src/hello.py</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" id="demo-hint" data-i18n="demo.hint">EXAMPLE COMMAND EXECUTION</span>
+              <button class="copy-button" id="copy-demo">COPY COMMAND</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="wf.kicker">closed loop</div>
+          <h2><span data-i18n="wf.title1">AI sees every result.</span><br><span data-i18n="wf.title2">You set the pace.</span></h2>
+          <p class="intro" data-i18n="wf.intro">All work passes through the clipboard. There are no hidden actions: the command and the response are shown in the Undo log.</p>
+        </div>
+        <div class="grid-4">
+          <article class="card"><div class="card-index">01 / ASK</div><h3 data-i18n="wf1.h">Set the task</h3><p data-i18n="wf1.p">Describe the result you want. If context is needed, request CTX first.</p></article>
+          <article class="card"><div class="card-index">02 / COPY</div><h3 data-i18n="wf2.h">Copy the command</h3><p data-i18n="wf2.p">The AI formats the command in a separate block. The Copy button puts it into the clipboard.</p></article>
+          <article class="card"><div class="card-index">03 / EXECUTE</div><h3 data-i18n="wf3.h">Undo runs it</h3><p data-i18n="wf3.p">The agent recognizes the marker, performs the action, shows the log and returns the result.</p></article>
+          <article class="card"><div class="card-index">04 / RETURN</div><h3 data-i18n="wf4.h">Paste the response back</h3><p data-i18n="wf4.p">Paste the result. The AI checks it and prepares the next well-grounded step.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-section">
+      <div class="shell">
+        <div class="safety">
+          <div>
+            <div class="kicker" data-i18n="saf.kicker">change control</div>
+            <h2><span data-i18n="saf.title1">Bold edits.</span><br><span data-i18n="saf.title2">Without the fear of losing a file.</span></h2>
+            <p class="intro" data-i18n="saf.intro">Before FILE, EDIT, DELETE and RENAME, Undo saves a backup. You can view the diff, roll back to a chosen version and configure automatic cleanup of old backups.</p>
+          </div>
+          <div class="backup-stack">
+            <div class="backup-row"><span class="check">✓</span><span class="filename">src / main.py</span><span class="saved" data-i18n="saf.b1">backup saved</span></div>
+            <div class="backup-row"><span class="check">✓</span><span class="filename">config.json</span><span class="saved" data-i18n="saf.b2">backup saved</span></div>
+            <div class="backup-row"><span class="check">✓</span><span class="filename">README.md</span><span class="saved" data-i18n="saf.b3">backup saved</span></div>
+            <div class="backup-row"><span class="check">↶</span><span class="filename">RESTORE: file | 1</span><span class="saved" data-i18n="saf.b4">undo change</span></div>
+          </div>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1fr 1fr; gap:32px; margin-top:32px; align-items:start;">
+          <div>
+            <div class="kicker" data-i18n="clean.kicker">backups clean themselves</div>
+            <h2 style="font-size:clamp(24px,3vw,32px);"><span data-i18n="clean.title">No folder full of stale copies.</span></h2>
+            <p class="intro" data-i18n="clean.intro">Every edit makes a backup. Every launch, Undo tidies up: files older than 30 days are deleted, only the 30 newest versions are kept per file, and anything younger than one hour is never touched.</p>
+            <p class="intro" style="font-size:14px;margin-top:14px;" data-i18n="clean.intro2">Fully configurable from the same window:</p>
+          </div>
+          <div class="demo-window" style="margin:0;">
+            <div class="demo-tabs">
+              <button class="demo-tab active">BACKUP_RULE</button>
+            </div>
+            <div class="demo-content" style="min-height:170px;">
+              <div class="prompt">&gt; BACKUP_RULE: show</div>
+              <div class="output">[BACKUP_RULE]</div>
+              <div class="output">  keep:     30</div>
+              <div class="output">  max_age:  30 days</div>
+              <br>
+              <div class="prompt">&gt; BACKUP_RULE: keep=50</div>
+              <div class="success">backup_keep = 50</div>
+              <br>
+              <div class="prompt">&gt; BACKUP_RULE: run</div>
+              <div class="success">cleanup triggered</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="memory" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="mem.kicker">the project remembers</div>
+          <h2 data-i18n="mem.title">Every session continues the previous one.</h2>
+          <p class="intro" data-i18n="mem.intro">Inside each project Undo keeps a small <code>.agent/</code> folder. It stores the idea, the errors you solved, the tasks still open, and a running log. One command — <code>CTX:</code> — collects everything into a single block of text for any AI chat.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1fr 1fr; gap:32px; align-items:start; margin-bottom:30px;">
+          <div class="manifest"><span class="m-dim">.agent/</span>
+  project.prj    <span class="m-dim">name, path, created</span>
+  desc.md        <span class="m-dim">what this is about</span>
+  context.json   <span class="m-dim">errors, solutions, notes</span>
+  tasks.json     <span class="m-dim">todo / done</span>
+  project.log    <span class="m-dim">running log</span>
+
+<span class="m-green">&gt; CTX:</span>
+<span class="m-dim">assemble everything into the clipboard</span>
+<span class="m-green">context ready · paste into any chat</span></div>
+
+          <div>
+            <div class="command-list">
+              <div class="command"><code>CTX:</code><span data-i18n="mem.c1">assemble context</span></div>
+              <div class="command"><code>NOTE: text</code><span data-i18n="mem.c2">add a note</span></div>
+              <div class="command"><code>TASK: add text</code><span data-i18n="mem.c3">add a task</span></div>
+              <div class="command"><code>TASK: done N</code><span data-i18n="mem.c4">mark done</span></div>
+              <div class="command"><code>TASK: list</code><span data-i18n="mem.c5">list tasks</span></div>
+              <div class="command"><code>REMIND: ctx=30</code><span data-i18n="mem.c6">reminder every N edits</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <article class="card"><div class="card-index">[ 01 ]</div><h3 data-i18n="mem.u1h">New chat? No problem.</h3><p data-i18n="mem.u1p">Open a fresh AI chat, paste <code>CTX:</code>, and the assistant knows your project name, its goals, the errors you already fixed, and what’s still on the list.</p></article>
+          <article class="card"><div class="card-index">[ 02 ]</div><h3 data-i18n="mem.u2h">Come back a week later</h3><p data-i18n="mem.u2p">Undo never forgets. Every session ends where the next one begins — no re-explaining, no “remind me what we were doing”.</p></article>
+          <article class="card"><div class="card-index">[ 03 ]</div><h3 data-i18n="mem.u3h">Your own memory aid</h3><p data-i18n="mem.u3p">Not sure what this folder was for? Run <code>CTX:</code> and read it yourself — description, tasks, notes, history, all in one place.</p></article>
+        </div>
+      </div>
+    </section>
+    <section id="help" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="help.kicker">help about the program</div>
+          <h2 data-i18n="help.title">What is Undo, really?</h2>
+          <p class="intro" data-i18n="help.intro">A small local agent that gives any AI assistant a working hand on your machine — through the clipboard, with full transparency and backups.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1fr 1fr;">
+          <div>
+            <h3 data-i18n="help.what">What it is</h3>
+            <p class="intro" style="font-size:14px;" data-i18n="help.what.p">Undo is a terminal-style desktop application. You run it locally. The AI writes a command. You copy it into the clipboard. Undo reads the clipboard, executes the command on disk and writes the result back. You paste the result into the chat. That is the whole protocol.</p>
+            <p class="intro" style="font-size:14px;" data-i18n="help.what.p2">No server. No account. No internet needed. No API keys. No telemetry. Everything happens on your machine.</p>
+
+            <h3 data-i18n="help.why">Why it exists</h3>
+            <p class="intro" style="font-size:14px;" data-i18n="help.why.p">Modern AI assistants are great at writing code and reasoning about it, but they cannot touch your file system. Cloud “tool use” requires accounts, keys, network and trust in a third party. Undo replaces all of that with the clipboard — the one channel every OS, every browser and every chat already supports.</p>
+
+            <h3 data-i18n="help.steps">How to use it — step by step</h3>
+            <ol class="intro" style="font-size:14px;padding-left:18px;">
+              <li data-i18n="help.s1">Run Undo.py or Undo.exe.</li>
+              <li data-i18n="help.s2">In your AI chat, ask: “Create a Python script that prints hello.”</li>
+              <li data-i18n="help.s3">The AI answers with a block like the one shown above.</li>
+              <li data-i18n="help.s4">Click Copy on that block.</li>
+              <li data-i18n="help.s5">Undo executes within a second. It saves the file and puts the result into the clipboard.</li>
+              <li data-i18n="help.s6">Paste the result into the chat.</li>
+              <li data-i18n="help.s7">The AI confirms and continues.</li>
+            </ol>
+          </div>
+
+          <div>
+            <h3 data-i18n="help.rules">What AI must always remember</h3>
+            <ol class="intro" style="font-size:14px;padding-left:18px;">
+              <li data-i18n="help.r1">No direct file access — only through Undo.</li>
+              <li data-i18n="help.r2">The user is the mediator: they copy and paste blocks.</li>
+              <li data-i18n="help.r3">One command = one code block. Don’t mix commands.</li>
+              <li data-i18n="help.r4">If an EDIT fails, read the file first, then send a new EDIT.</li>
+              <li data-i18n="help.r5">Don’t invent paths — ask Undo: TREE: or LIST:.</li>
+              <li data-i18n="help.r6">Always check the result — Undo returns it to the clipboard.</li>
+              <li data-i18n="help.r7">For long commands Undo returns a compact summary: N lines.</li>
+            </ol>
+
+            <h3 data-i18n="help.safety">Safety and privacy</h3>
+            <ul class="intro" style="font-size:14px;padding-left:18px;">
+              <li data-i18n="help.sf1">No network access by design. Everything is local.</li>
+              <li data-i18n="help.sf2">Every destructive operation creates a backup first.</li>
+              <li data-i18n="help.sf3">Auto-cleanup keeps only the N most recent versions of each file.</li>
+              <li data-i18n="help.sf4">The user is always the mediator. Nothing runs without a copy.</li>
+              <li data-i18n="help.sf5">As with any shell tool — do not paste commands you don’t understand.</li>
+            </ul>
+
+            <h3 data-i18n="help.ai">Compatible AI assistants</h3>
+            <p class="intro" style="font-size:14px;" data-i18n="help.ai.p">Anything that can show a text block with a Copy button: ChatGPT, Claude, DeepSeek, Gemini, local LLM frontends (Ollama, LM Studio, SillyTavern), even Notepad.</p>
+
+            <h3 data-i18n="help.license">License</h3>
+            <p class="intro" style="font-size:14px;" data-i18n="help.license.p">MIT. Take it, fork it, ship it, sell it — no questions asked.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="faq.kicker">questions and answers</div>
+          <h2 data-i18n="faq.title">The system stays under your control.</h2>
+        </div>
+        <div class="faq">
+          <details><summary data-i18n="faq.q1">Does Undo run commands by itself?</summary><p data-i18n="faq.a1">Yes. When a command with a marker lands in the clipboard, Undo recognizes it automatically and shows the result in the log.</p></details>
+          <details><summary data-i18n="faq.q2">What if a command doesn’t work?</summary><p data-i18n="faq.a2">Undo returns an error message. Before the next edit the AI can request the file contents or specific lines to prepare a precise fix.</p></details>
+          <details><summary data-i18n="faq.q3">Can I see what changed?</summary><p data-i18n="faq.a3">Yes. The DIFF command shows the difference against the latest backup. RESTORE brings back a chosen version and saves the current state first.</p></details>
+          <details><summary data-i18n="faq.q4">How do I hand over project context?</summary><p data-i18n="faq.a4">Run CTX and paste the assembled context into the chat. It includes project metadata, description, notes, tasks and log.</p></details>
+          <details><summary data-i18n="faq.q5">Is my data sent anywhere?</summary><p data-i18n="faq.a5">No. Undo has no network code by design. Nothing leaves your machine.</p></details>
+          <details><summary data-i18n="faq.q6">Do I need Python installed?</summary><p data-i18n="faq.a6">Only if you run the .py source. The compiled .exe works on its own.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section id="author" class="content-section" style="background: radial-gradient(ellipse at 50% 0%, rgba(87,153,63,.10), transparent 40rem);">
+      <div class="shell" style="max-width:820px;">
+        <div class="kicker" data-i18n="au.kicker">a note from the author</div>
+        <h2 style="margin-top:14px;" data-i18n="au.title">Hi. I made this.</h2>
+
+        <p class="intro" style="font-size:17px;color:var(--white);" data-i18n="au.p1">
+          This is the first program I’ve ever finished — and I want to say a few things while I have your attention.
+        </p>
+
+        <div style="border:1px solid var(--line-bright);padding:26px 24px;margin-top:22px;background:linear-gradient(120deg,rgba(168,240,106,.06),rgba(13,18,14,.9));">
+          <p class="intro" style="font-size:17px;color:var(--white);">
+            <strong style="color:var(--green);" data-i18n="au.love">Love each other.</strong><br>
+            <span data-i18n="au.love2">Be patient. Respect one another. Value one another. Think about life.</span>
+          </p>
+          <p class="intro" style="font-size:15px;margin-top:16px;" data-i18n="au.p2">
+            There is nothing more important than that. Not success, not money, not even this program. All of it ends. Only what we give to others stays.
+          </p>
+          <p class="intro" style="font-size:15px;margin-top:16px;" data-i18n="au.p3">
+            I built Undo so you could build something of your own — a small idea, a small step, a small kindness turned into code. If you’re reading this, you already know what to do next.
+          </p>
+          <p class="intro" style="font-size:15px;margin-top:16px;" data-i18n="au.p4">
+            If you want to say hello, share a thought, or show me what you made — write to me. I read every message.
+          </p>
+          <p style="margin-top:22px;font:15px var(--mono);color:var(--green);letter-spacing:.04em;">
+            ✉ <a href="mailto:NickBass@bk.ru" style="border-bottom:1px dashed var(--green);">NickBass@bk.ru</a>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="manifest" class="content-section">
+      <div class="shell">
+        <div class="section-head">
+          <div class="kicker" data-i18n="man.kicker">setup in one message</div>
+          <h2 data-i18n="man.title">Send the manifest. That’s the whole setup.</h2>
+          <p class="intro" data-i18n="man.intro">Undo ships with a manifest — a single text document that tells any AI assistant how to work with the agent. Copy it, paste it into a new chat, and the AI instantly knows all the commands, the rules, and the backup policy. No training, no configuration.</p>
+        </div>
+
+        <div class="split" style="grid-template-columns: 1fr 1.15fr; align-items:start; gap:32px;">
+          <div>
+            <div class="command-list">
+              <div class="command"><code>1.</code><span data-i18n="man.step1">Open Undo → AI menu</span></div>
+              <div class="command"><code>2.</code><span data-i18n="man.step2">Click “Copy manifest for AI”</span></div>
+              <div class="command"><code>3.</code><span data-i18n="man.step3">Paste it in any chat</span></div>
+              <div class="command"><code>4.</code><span data-i18n="man.step4">AI is ready to work</span></div>
+            </div>
+            <p class="intro" style="font-size:14px;margin-top:18px;" data-i18n="man.foot">Works with ChatGPT, Claude, DeepSeek, Gemini, local LLMs. Anything that can display a text block with a Copy button.</p>
+          </div>
+
+          <div class="demo-window">
+            <div class="demo-tabs">
+              <button class="demo-tab active">MANIFEST.RU</button>
+              <button class="demo-tab">MANIFEST.EN</button>
+              <button class="demo-tab">MANIFEST.ZH</button>
+            </div>
+            <div class="demo-content" style="min-height:230px;font-size:11px;line-height:1.7;">
+              <div class="prompt"># UNDO — manifest for AI</div>
+              <div class="output">## Who I am</div>
+              <div class="output">Local agent on the user’s PC. Terminal window</div>
+              <div class="output">(black background, green text). I take commands</div>
+              <div class="output">via clipboard, execute them on disk, return</div>
+              <div class="output">results to clipboard.</div>
+              <br>
+              <div class="prompt">## Commands</div>
+              <div class="output">FILE: path           create / overwrite</div>
+              <div class="output">EDIT: path           FIND/REPLACE blocks</div>
+              <div class="output">READ: path           read with line numbers</div>
+              <div class="output">BACKUPS / RESTORE    version control</div>
+              <div class="output">SHOT: / SHOT: full   screenshots</div>
+              <div class="output">CTX:                 project context</div>
+              <br>
+              <div class="success">— 500+ lines, 3 languages, ready to paste —</div>
+            </div>
+            <div class="demo-actions">
+              <span class="demo-hint" data-i18n="man.hint">THE MANIFEST IS BUILT INTO THE PROGRAM</span>
+              <button class="copy-button" data-i18n="man.copy">COPY MANIFEST</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="content-section" style="background: radial-gradient(ellipse at 50% 100%, rgba(87,153,63,.12), transparent 40rem);">
+      <div class="shell" style="max-width:820px;text-align:center;">
+        <div class="kicker" data-i18n="dl.kicker">download</div>
+        <h2 data-i18n="dl.title">Get Undo for Windows.</h2>
+        <p class="intro" style="max-width:560px;margin:0 auto 30px;" data-i18n="dl.intro">A single installer. One folder on your machine. No Python required, no account, no network.</p>
+
+        <a class="button primary" href="Undo_Setup.exe" download style="font-size:15px;padding:14px 26px;min-height:52px;">
+          <span data-i18n="dl.btn">DOWNLOAD UNDO_SETUP.EXE</span> <span>↓</span>
+        </a>
+
+        <div class="status-grid" style="margin-top:34px;text-align:left;">
+          <div class="status-cell"><strong>41 MB</strong><span data-i18n="dl.s1">installer size</span></div>
+          <div class="status-cell"><strong>WIN 10/11</strong><span data-i18n="dl.s2">64-bit Windows</span></div>
+          <div class="status-cell"><strong>v1.0</strong><span data-i18n="dl.s3">current version</span></div>
+          <div class="status-cell"><strong>MIT</strong><span data-i18n="dl.s4">free and open</span></div>
+        </div>
+
+        <p class="intro" style="font-size:13px;margin-top:26px;color:var(--dim);" data-i18n="dl.note">
+          Installs into <code>%LOCALAPPDATA%\Undo</code>. Creates a desktop shortcut. Includes an uninstaller.
+        </p>
+      </div>
+    </section>
+
+    <section id="start" class="final">
+      <div class="kicker" data-i18n="fin.kicker">READY WHEN YOU ARE</div>
+      <h2 data-i18n="fin.title">Your AI just received a workstation.</h2>
+      <p data-i18n="fin.p">Explore the project. Make changes. Check the result. Return to any version — command after command.</p>
+      <a class="button primary" href="#commands"><span data-i18n="fin.cta">EXPLORE COMMANDS</span> <span>→</span></a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <span class="footer-logo">↶ UNDO</span>
+      <span>LOCAL AGENT · PROJECT WORKSPACE</span>
+      <span>COMMANDS IN. RESULTS OUT.</span>
+    </div>
+  </footer>
+
+  <script>
+    /* LIVE ANIMATION */
+    const stage = document.getElementById('stage');
+    const cursor = document.getElementById('stage-cursor');
+    const bufferIcon = document.getElementById('buffer-icon');
+    const pasteFlash = document.getElementById('paste-flash');
+    const stepLabel = document.getElementById('stage-step-label');
+    const deskNewFile = document.getElementById('desk-new-file');
+    const deskPreview = document.getElementById('desk-preview');
+    const browserStatus = document.getElementById('browser-status');
+    const msgUser = document.getElementById('msg-user');
+    const msgAi = document.getElementById('msg-ai');
+    const msgCode = document.getElementById('msg-code');
+    const copyBtnVisual = document.getElementById('copy-btn-visual');
+    const msgResult = document.getElementById('msg-result');
+    const msgAiConfirm = document.getElementById('msg-ai-confirm');
+
+    function moveCursorTo(el) {
+      const r = stage.getBoundingClientRect();
+      const e = el.getBoundingClientRect();
+      const x = e.left - r.left + e.width / 2 - 8;
+      const y = e.top - r.top + e.height / 2 - 8;
+      cursor.style.opacity = '1';
+      cursor.style.transform = `translate(${x}px, ${y}px)`;
+    }
+    function clickAt(el) {
+      moveCursorTo(el);
+      cursor.classList.remove('click');
+      void cursor.offsetWidth;
+      cursor.classList.add('click');
+    }
+    function hideCursor() { cursor.style.opacity = '0'; }
+
+    function setLine(id, time, text, cls) {
+      const line = document.getElementById(id);
+      const t = document.getElementById('t' + id.slice(1));
+      const span = document.getElementById('u' + id.slice(1) + 'txt');
+      if (t) t.textContent = time;
+      if (span) {
+        span.textContent = text;
+        if (cls) span.className = cls;
+      }
+      line.classList.add('show');
+    }
+    function resetLines() {
+      ['u1','u2','u3','u4'].forEach(id => {
+        const l = document.getElementById(id);
+        l.classList.remove('show');
+        const s = document.getElementById('u' + id.slice(1) + 'txt');
+        if (s) s.textContent = '';
+      });
+    }
+
+    function nowTime(offset=0) {
+      const d = new Date();
+      d.setSeconds(d.getSeconds() + offset);
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    async function runAnimation() {
+      while (true) {
+        msgUser.classList.remove('show');
+        msgAi.classList.remove('show');
+        msgCode.classList.remove('active');
+        msgResult.classList.remove('show');
+        msgAiConfirm.classList.remove('show');
+        if (browserStatus) { browserStatus.textContent = '● waiting for input…'; browserStatus.classList.remove('live'); }
+        deskNewFile.classList.remove('show', 'highlight');
+        deskPreview.classList.remove('show');
+        bufferIcon.classList.remove('filled');
+        bufferIcon.textContent = 'EMPTY';
+        hideCursor();
+        resetLines();
+        stepLabel.textContent = 'STEP 1 / 6';
+        await sleep(700);
+
+        stepLabel.textContent = 'STEP 1 / 6';
+        msgUser.classList.add('show');
+        if (browserStatus) { browserStatus.textContent = '● sending message…'; browserStatus.classList.add('live'); }
+        await sleep(1100);
+
+        stepLabel.textContent = 'STEP 2 / 6';
+        msgAi.classList.add('show');
+        if (browserStatus) browserStatus.textContent = '● AI: ready to copy';
+        await sleep(1300);
+
+        stepLabel.textContent = 'STEP 3 / 6';
+        clickAt(copyBtnVisual);
+        await sleep(350);
+        msgCode.classList.add('active');
+        if (browserStatus) browserStatus.textContent = '● copied to clipboard';
+        bufferIcon.classList.add('filled');
+        bufferIcon.textContent = 'CMD';
+        await sleep(900);
+
+        stepLabel.textContent = 'STEP 4 / 6';
+        pasteFlash.classList.remove('show');
+        void pasteFlash.offsetWidth;
+        pasteFlash.classList.add('show');
+
+        setLine('u1', nowTime(0), 'FILE: hello.py', 'u-green');
+        await sleep(420);
+        setLine('u2', nowTime(1), '> COMMAND: FILE', 'u-blue');
+        await sleep(420);
+        setLine('u3', nowTime(1), 'backup created', 'u-muted');
+        await sleep(420);
+        setLine('u4', nowTime(2), '✓ saved: hello.py (0.1K)', 'u-green');
+        await sleep(500);
+
+        stepLabel.textContent = 'STEP 5 / 6';
+        deskNewFile.classList.add('show');
+        await sleep(800);
+
+        deskNewFile.classList.add('highlight');
+        deskPreview.classList.add('show');
+        await sleep(1100);
+
+        stepLabel.textContent = 'STEP 6 / 6';
+        bufferIcon.classList.remove('filled');
+        bufferIcon.textContent = 'RESULT';
+        bufferIcon.classList.add('filled');
+        if (browserStatus) browserStatus.textContent = '● returning result…';
+        await sleep(800);
+
+        msgResult.classList.add('show');
+        if (browserStatus) browserStatus.textContent = '● user pastes result';
+        await sleep(1000);
+
+        msgAiConfirm.classList.add('show');
+        if (browserStatus) { browserStatus.textContent = '✓ task complete'; browserStatus.classList.add('live'); }
+        await sleep(1800);
+
+        deskPreview.classList.remove('show');
+        await sleep(400);
+        bufferIcon.classList.remove('filled');
+        bufferIcon.textContent = 'EMPTY';
+        hideCursor();
+        await sleep(1000);
+      }
+    }
+
+    let animStarted = false;
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting && !animStarted) {
+          animStarted = true;
+          runAnimation();
+        }
+      });
+    }, { threshold: 0.2 });
+    io.observe(stage);
+
+    /* MANIFEST DEMO TABS */
+    const manifestDemos = {
+      ru: '<div class="prompt"># UNDO — манифест для ИИ</div>' +
+          '<div class="output">## Кто я</div>' +
+          '<div class="output">Локальный агент на компьютере пользователя.</div>' +
+          '<div class="output">Терминальное окно (чёрный фон, зелёные буквы).</div>' +
+          '<div class="output">Принимаю команды через буфер обмена, выполняю</div>' +
+          '<div class="output">их на диске, возвращаю результат в буфер.</div>' +
+          '<br>' +
+          '<div class="prompt">## Команды</div>' +
+          '<div class="output">FILE: path           создать/перезаписать</div>' +
+          '<div class="output">EDIT: path           правка блоками FIND/REPLACE</div>' +
+          '<div class="output">READ: path           читать с номерами строк</div>' +
+          '<div class="output">BACKUPS / RESTORE    управление версиями</div>' +
+          '<div class="output">SHOT: / SHOT: full   скриншоты</div>' +
+          '<div class="output">CTX:                 контекст проекта</div>' +
+          '<br>' +
+          '<div class="success">— 500+ строк, 3 языка, готово к вставке —</div>',
+      en: '<div class="prompt"># UNDO — manifest for AI</div>' +
+          '<div class="output">## Who I am</div>' +
+          '<div class="output">Local agent on the user’s PC. Terminal window</div>' +
+          '<div class="output">(black background, green text). I take commands</div>' +
+          '<div class="output">via clipboard, execute them on disk, return</div>' +
+          '<div class="output">results to clipboard.</div>' +
+          '<br>' +
+          '<div class="prompt">## Commands</div>' +
+          '<div class="output">FILE: path           create / overwrite</div>' +
+          '<div class="output">EDIT: path           FIND/REPLACE blocks</div>' +
+          '<div class="output">READ: path           read with line numbers</div>' +
+          '<div class="output">BACKUPS / RESTORE    version control</div>' +
+          '<div class="output">SHOT: / SHOT: full   screenshots</div>' +
+          '<div class="output">CTX:                 project context</div>' +
+          '<br>' +
+          '<div class="success">— 500+ lines, 3 languages, ready to paste —</div>',
+      zh: '<div class="prompt"># UNDO — AI 清单</div>' +
+          '<div class="output">## 我是谁</div>' +
+          '<div class="output">用户 PC 上的本地代理。终端窗口</div>' +
+          '<div class="output">(黑底, 绿字)。我通过剪贴板接收命令,</div>' +
+          '<div class="output">在磁盘上执行, 把结果放回剪贴板。</div>' +
+          '<br>' +
+          '<div class="prompt">## 命令</div>' +
+          '<div class="output">FILE: path           创建 / 覆盖</div>' +
+          '<div class="output">EDIT: path           块编辑 FIND/REPLACE</div>' +
+          '<div class="output">READ: path           带行号读取</div>' +
+          '<div class="output">BACKUPS / RESTORE    版本控制</div>' +
+          '<div class="output">SHOT: / SHOT: full   截图</div>' +
+          '<div class="output">CTX:                 项目上下文</div>' +
+          '<br>' +
+          '<div class="success">— 500+ 行, 3 种语言, 可直接粘贴 —</div>'
+    };
+
+    const manifestTabs = document.querySelectorAll('#manifest .demo-tab');
+    const manifestContent = document.querySelector('#manifest .demo-content');
+    if (manifestTabs.length && manifestContent) {
+      const keys = ['ru', 'en', 'zh'];
+      manifestTabs.forEach((tab, i) => {
+        tab.addEventListener('click', () => {
+          manifestTabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          const key = keys[i] || 'en';
+          manifestContent.innerHTML = manifestDemos[key];
+        });
+      });
+    }
+
+    /* DEMO TABS */
+    const demos = {
+      file: {
+        command: 'FILE: src/hello.py\\nprint("hello")',
+        hintKey: 'demo.hint',
+        html: '<div class="prompt">FILE: src/hello.py</div><div>print("hello")</div><br><div class="output">&gt; COMMAND: FILE</div><div class="output">backup created</div><div class="success">saved: src/hello.py</div><div class="success">syntax: OK · Python</div><div class="output">buffer &lt; saved: src/hello.py</div>'
+      },
+      search: {
+        command: 'SEARCH: TODO',
+        hintKey: 'demo.hint.search',
+        html: '<div class="prompt">SEARCH: TODO</div><br><div class="output">&gt; COMMAND: SEARCH</div><div class="output">searching project files...</div><div class="success">src/tasks.py:18  # TODO: add validation</div><div class="success">tests/test_api.py:42  # TODO: cover error case</div><div class="output">2 matches · copied to clipboard</div>'
+      },
+      restore: {
+        command: 'RESTORE: src/main.py | 1',
+        hintKey: 'demo.hint.restore',
+        html: '<div class="prompt">RESTORE: src/main.py | 1</div><br><div class="output">&gt; COMMAND: RESTORE</div><div class="output">snapshot current file</div><div class="success">restored backup #1</div><div class="success">before_restore backup created</div><div class="output">file ready · previous copy preserved</div>'
+      }
+    };
+    const demoContent = document.getElementById('demo-content');
+    const hint = document.getElementById('demo-hint');
+    let activeDemo = 'file';
+
+    document.querySelectorAll('.demo-tab').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));
+        button.classList.add('active');
+        activeDemo = button.dataset.demo;
+        demoContent.innerHTML = demos[activeDemo].html;
+        const key = demos[activeDemo].hintKey;
+        hint.textContent = (I18N[currentLang] && I18N[currentLang][key]) || 'EXAMPLE COMMAND EXECUTION';
+      });
+    });
+
+    /* TERMINAL DEMO TABS */
+    const termDemos = {
+      shell: {
+        html: '<div class="prompt">&gt; dir</div>' +
+              '<div class="output">  app.py       2.1K</div>' +
+              '<div class="output">  config.json  0.4K</div>' +
+              '<div class="output">  readme.md    0.8K</div>' +
+              '<div class="success">  (no command marker)</div>'
+      },
+      calc: {
+        html: '<div class="prompt">&gt; calc: 2**16</div>' +
+              '<div class="output">&gt; COMMAND: CALC</div>' +
+              '<div class="success">[CALC] 2**16 = 65536</div>' +
+              '<br>' +
+              '<div class="prompt">&gt; calc: 10/3</div>' +
+              '<div class="success">[CALC] 10/3 = 3.3333333333333335</div>'
+      },
+      nav: {
+        html: '<div class="prompt">&gt; cd C:\\4\\project</div>' +
+              '<div class="success">cwd: C:\\4\\project</div>' +
+              '<br>' +
+              '<div class="prompt">&gt; cd ..</div>' +
+              '<div class="success">cwd: C:\\4</div>' +
+              '<br>' +
+              '<div class="prompt">&gt; help</div>' +
+              '<div class="output">[help] FILE EDIT APPEND DELETE READ HEAD TAIL</div>' +
+              '<div class="output">[help] BACKUPS RESTORE DIFF CHECK SNIPPET CALC</div>'
+      }
+    };
+    const termContent = document.getElementById('term-content');
+    document.querySelectorAll('[data-term]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-term]').forEach(t => t.classList.remove('active'));
+        button.classList.add('active');
+        const key = button.dataset.term;
+        if (termContent && termDemos[key]) termContent.innerHTML = termDemos[key].html;
+      });
+    });
+
+    /* SHOT DEMO TABS */
+    const shotDemos = {
+      window: {
+        html: '<div class="prompt">SHOT:</div><br>' +
+              '<div class="output">&gt; COMMAND: SHOT</div>' +
+              '<div class="output">capturing active window…</div>' +
+              '<div class="success">saved: shots/shot_20261016_234501.png</div>' +
+              '<div class="success">buffer &lt; [image]</div>' +
+              '<div class="output">paste into any chat — the AI sees it</div>'
+      },
+      full: {
+        html: '<div class="prompt">SHOT: full</div><br>' +
+              '<div class="output">&gt; COMMAND: SHOT / full</div>' +
+              '<div class="output">capturing whole screen…</div>' +
+              '<div class="success">saved: shots/shot_20261016_234512.png</div>' +
+              '<div class="success">buffer &lt; [image]</div>' +
+              '<div class="output">full desktop — windows, taskbar, everything</div>'
+      },
+      named: {
+        html: '<div class="prompt">SHOT: "Chrome"</div><br>' +
+              '<div class="output">&gt; COMMAND: SHOT / window by name</div>' +
+              '<div class="output">looking for window: Chrome</div>' +
+              '<div class="success">found — raising to foreground</div>' +
+              '<div class="success">saved: shots/shot_20261016_234520.png</div>' +
+              '<div class="success">buffer &lt; [image]</div>'
+      }
+    };
+    const shotContent = document.getElementById('shot-content');
+    document.querySelectorAll('[data-shot]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-shot]').forEach(t => t.classList.remove('active'));
+        button.classList.add('active');
+        const key = button.dataset.shot;
+        if (shotContent && shotDemos[key]) shotContent.innerHTML = shotDemos[key].html;
+      });
+    });
+
+    const manifestCopyBtn = document.querySelector('#manifest .copy-button');
+    if (manifestCopyBtn) {
+      manifestCopyBtn.addEventListener('click', async () => {
+        const text = (I18N[currentLang] && I18N[currentLang]['man.hint']) || 'Copy the manifest from the Undo program (AI menu → Copy manifest for AI).';
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = manifestCopyBtn.textContent;
+          manifestCopyBtn.textContent = '✓ COPIED';
+          setTimeout(() => manifestCopyBtn.textContent = orig, 1400);
+        } catch {
+          manifestCopyBtn.textContent = 'FAILED';
+          setTimeout(() => manifestCopyBtn.textContent = 'COPY MANIFEST', 1400);
+        }
+      });
+    }
+
+    document.getElementById('copy-demo').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(demos[activeDemo].command);
+        button.textContent = 'COPIED ✓';
+        setTimeout(() => button.textContent = 'COPY COMMAND', 1400);
+      } catch {
+        button.textContent = 'SELECT COMMAND';
+        setTimeout(() => button.textContent = 'COPY COMMAND', 1400);
+      }
+    });
+
+    /* I18N */
+    const I18N = {
+      en: {
+        'nav.capabilities': 'Capabilities',
+        'nav.toolbar': 'Menu',
+        'nav.commands': 'Commands',
+        'nav.workflow': 'Workflow',
+        'nav.help': 'Help',
+        'hero.kicker': 'command station for AI',
+        'hero.title1': 'Give AI',
+        'hero.title2': 'access to',
+        'hero.title3': 'work.',
+        'hero.copy': 'UNDO is a local agent that turns AI requests into real file operations. Read code, create structure, fix errors and manage the project through short, clear commands.',
+        'hero.cta1': 'SEE HOW IT WORKS',
+        'hero.cta2': 'CAPABILITIES',
+        'stat1': 'project tools',
+        'stat2': 'backup before change',
+        'stat3': 'log for every command',
+        'stat4': 'agent on your machine',
+        'cap.kicker': 'beyond ordinary chat',
+        'cap.title1': 'AI suggests.',
+        'cap.title2': 'UNDO executes.',
+        'cap.intro': 'Instead of “open the file and paste this code” — a command that does the work. Instead of guesses — the actual content of the project. Instead of the risk of losing changes — backups and rollback.',
+        'cap1.h': 'Full access to project operations',
+        'cap1.p': 'Create, read, search, rename, delete and precisely edit files. Folders, project tree, statistics and hashes — also through commands.',
+        'cap2.h': 'Context that never gets lost',
+        'cap2.p': 'Project description, log, tasks, notes and decisions are stored together. The CTX command assembles them for the AI.',
+        'cap3.h': 'Change management',
+        'cap3.p': 'A backup before every edit, diff against the previous version, file restore and storage configuration. Experiment and roll back.',
+        'cap4.h': 'Result validation on the spot',
+        'cap4.p': 'Syntax checks for Python, JSON, HTML and JavaScript. After EDIT you immediately see whether the check passed.',
+        'cap5.h': 'Diagnostics without switching',
+        'cap5.p': 'Search text and regular expressions, open the needed lines, inspect project state and read the log right in the working loop.',
+        'cap6.h': 'Data for the next step',
+        'cap6.p': 'Context, logs and command results are returned to the clipboard. Paste the answer into the chat — the AI continues concretely.',
+        'cap7.h': 'Ctrl+C works in any layout',
+        'cap7.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode, so they work in Russian, Chinese, or any other keyboard layout — no switching needed.',
+        'cap8.h': 'Undo can rewrite itself',
+        'cap8.p': 'Edit Undo’s own source with Undo. It saves a backup, checks the syntax, and restarts itself in place — the tool is its own test case.',
+        'clean.kicker': 'backups clean themselves',
+        'clean.title': 'No folder full of stale copies.',
+        'clean.intro': 'Every edit makes a backup. Every launch, Undo tidies up: files older than 30 days are deleted, only the 30 newest versions are kept per file, and anything younger than one hour is never touched.',
+        'clean.intro2': 'Fully configurable from the same window:',
+        'mem.kicker': 'the project remembers',
+        'mem.title': 'Every session continues the previous one.',
+        'mem.intro': 'Inside each project, Undo keeps a small .agent/ folder. The AI can pick up where you left off with one command — no re-explaining history.',
+        'mem.c1': 'assemble context',
+        'mem.c2': 'add a note',
+        'mem.c3': 'add a task',
+        'mem.c4': 'mark done',
+        'mem.c5': 'list tasks',
+        'mem.c6': 'reminder every N edits',
+        'mem.foot': 'Every N changes Undo reminds you — and copies the context straight to the clipboard, ready to paste into any chat.',
+        'term.kicker': 'not just an AI bridge',
+        'term.title1': 'Undo is also a',
+        'term.title2': 'terminal.',
+        'term.intro': 'Type anything that doesn’t look like an AI command — and it goes straight to cmd.exe, with the output in the same log. Switch between working with AI and working with your machine without leaving the window.',
+        'term.hint': 'TYPE ANYTHING — IT GOES TO CMD.EXE',
+        'term.c1': 'list files',
+        'term.c2': 'change folder',
+        'term.c3': 'echo',
+        'term.c4': 'python',
+        'term.c5': 'pip',
+        'term.c6': 'powershell',
+        'term.c7': 'clear log',
+        'term.c8': 'list commands',
+        'term.c9': 'command history',
+        'term.c10': 'safe calculator',
+        'shots.kicker': 'AI can see your screen',
+        'shots.title1': 'Show, don’t describe.',
+        'shots.intro': 'The SHOT command takes a screenshot and puts it straight into the clipboard — as an image, not text. Paste it into any chat and the AI sees exactly what you see. No plugins, no screen-share, no permissions.',
+        'shots.hint': 'IMAGE GOES TO CLIPBOARD, NOT A FILE PATH',
+        'shots.c1': 'active window',
+        'shots.c2': 'whole screen',
+        'shots.c3': 'window by name',
+        'shots.c4': 'after N seconds',
+        'shots.c5': 'save to file',
+        'shots.u1h': 'Ask what’s on screen',
+        'shots.u1p': 'AI writes “SHOT: full”, you press Ctrl+V into the chat. The AI sees the whole desktop — no description needed.',
+        'shots.u2h': 'Debug without sharing a screen',
+        'shots.u2p': 'Error in a window? Just SHOT: and paste. Works over any chat, any time, any place.',
+        'shots.u3h': 'See the rendered result',
+        'shots.u3p': 'Run a program, take a shot with SHOT: wait=2, paste it. The AI checks layout, colors, and errors visually.',
+        'cmd.kicker': 'command interface',
+        'cmd.title': 'One line — one action.',
+        'cmd.intro': 'Commands read like instructions. The first line defines the operation; the following lines contain the path, text or parameters.',
+        'cmd1': 'create / replace',
+        'cmd2': 'read with lines',
+        'cmd3': 'precise block edit',
+        'cmd4': 'search project',
+        'cmd5': 'syntax check',
+        'cmd6': 'compare to backup',
+        'cmd7': 'restore version',
+        'cmd8': 'add task',
+        'cmd9': 'append / delete',
+        'cmd10': 'file & folder ops',
+        'cmd11': 'first / last N',
+        'cmd12': 'size, words, md5+sha1',
+        'cmd13': 'search in file',
+        'cmd14': 'regex search',
+        'cmd15': 'folder / project tree',
+        'cmd16': 'safe calculator',
+        'cmd17': '18 code templates',
+        'cmd18': 'list / compare',
+        'cmd19': 'backup retention',
+        'cmd20': 'project memory',
+        'cmd21': 'context reminder',
+        'cmd22': 'screenshots',
+        'cmd23': 'system commands',
+        'cmd24': 'last N log lines',
+        'cmd25': 'command history',
+        'cmd26': 'copy / paste menu',
+        'cmd25': 'command history',
+        'cmd26': 'copy / paste menu',
+        'demo.hint': 'EXAMPLE COMMAND EXECUTION',
+        'demo.hint.search': 'EXAMPLE PROJECT SEARCH',
+        'demo.hint.restore': 'EXAMPLE VERSION RESTORE',
+        'wf.kicker': 'closed loop',
+        'wf.title1': 'AI sees every result.',
+        'wf.title2': 'You set the pace.',
+        'wf.intro': 'All work passes through the clipboard. There are no hidden actions: the command and the response are shown in the Undo log.',
+        'wf1.h': 'Set the task', 'wf1.p': 'Describe the result you want. If context is needed, request CTX first.',
+        'wf2.h': 'Copy the command', 'wf2.p': 'The AI formats the command in a separate block. The Copy button puts it into the clipboard.',
+        'wf3.h': 'Undo runs it', 'wf3.p': 'The agent recognizes the marker, performs the action, shows the log and returns the result.',
+        'wf4.h': 'Paste the response back', 'wf4.p': 'Paste the result. The AI checks it and prepares the next well-grounded step.',
+        'saf.kicker': 'change control',
+        'saf.title1': 'Bold edits.',
+        'saf.title2': 'Without the fear of losing a file.',
+        'saf.intro': 'Before FILE, EDIT, DELETE and RENAME, Undo saves a backup. You can view the diff, roll back to a chosen version and configure automatic cleanup of old backups.',
+        'saf.b1': 'backup saved', 'saf.b2': 'backup saved', 'saf.b3': 'backup saved', 'saf.b4': 'undo change',
+        'help.kicker': 'help about the program',
+        'help.title': 'What is Undo, really?',
+        'help.intro': 'A small local agent that gives any AI assistant a working hand on your machine — through the clipboard, with full transparency and backups.',
+        'help.what': 'What it is',
+        'help.what.p': 'Undo is a terminal-style desktop application. You run it locally. The AI writes a command. You copy it into the clipboard. Undo reads the clipboard, executes the command on disk and writes the result back. You paste the result into the chat. That is the whole protocol.',
+        'help.what.p2': 'No server. No account. No internet needed. No API keys. No telemetry. Everything happens on your machine.',
+        'help.why': 'Why it exists',
+        'help.why.p': 'Modern AI assistants are great at writing code and reasoning about it, but they cannot touch your file system. Cloud “tool use” requires accounts, keys, network and trust in a third party. Undo replaces all of that with the clipboard — the one channel every OS, every browser and every chat already supports.',
+        'help.steps': 'How to use it — step by step',
+        'help.s1': 'Run Undo.py or Undo.exe.',
+        'help.s2': 'In your AI chat, ask: “Create a Python script that prints hello.”',
+        'help.s3': 'The AI answers with a block like the one shown above.',
+        'help.s4': 'Click Copy on that block.',
+        'help.s5': 'Undo executes within a second. It saves the file and puts the result into the clipboard.',
+        'help.s6': 'Paste the result into the chat.',
+        'help.s7': 'The AI confirms and continues.',
+        'help.rules': 'What AI must always remember',
+        'help.r1': 'No direct file access — only through Undo.',
+        'help.r2': 'The user is the mediator: they copy and paste blocks.',
+        'help.r3': 'One command = one code block. Don’t mix commands.',
+        'help.r4': 'If an EDIT fails, read the file first, then send a new EDIT.',
+        'help.r5': 'Don’t invent paths — ask Undo: TREE: or LIST:.',
+        'help.r6': 'Always check the result — Undo returns it to the clipboard.',
+        'help.r7': 'For long commands Undo returns a compact summary: N lines.',
+        'help.safety': 'Safety and privacy',
+        'help.sf1': 'No network access by design. Everything is local.',
+        'help.sf2': 'Every destructive operation creates a backup first.',
+        'help.sf3': 'Auto-cleanup keeps only the N most recent versions of each file.',
+        'help.sf4': 'The user is always the mediator. Nothing runs without a copy.',
+        'help.sf5': 'As with any shell tool — do not paste commands you don’t understand.',
+        'help.ai': 'Compatible AI assistants',
+        'help.ai.p': 'Anything that can show a text block with a Copy button: ChatGPT, Claude, DeepSeek, Gemini, local LLM frontends (Ollama, LM Studio, SillyTavern), even Notepad.',
+        'help.license': 'License',
+        'help.license.p': 'MIT. Take it, fork it, ship it, sell it — no questions asked.',
+        'faq.kicker': 'questions and answers',
+        'faq.title': 'The system stays under your control.',
+        'faq.q1': 'Does Undo run commands by itself?',
+        'faq.a1': 'Yes. When a command with a marker lands in the clipboard, Undo recognizes it automatically and shows the result in the log.',
+        'faq.q2': 'What if a command doesn’t work?',
+        'faq.a2': 'Undo returns an error message. Before the next edit the AI can request the file contents or specific lines to prepare a precise fix.',
+        'faq.q3': 'Can I see what changed?',
+        'faq.a3': 'Yes. The DIFF command shows the difference against the latest backup. RESTORE brings back a chosen version and saves the current state first.',
+        'faq.q4': 'How do I hand over project context?',
+        'faq.a4': 'Run CTX and paste the assembled context into the chat. It includes project metadata, description, notes, tasks and log.',
+        'faq.q5': 'Is my data sent anywhere?',
+        'faq.a5': 'No. Undo has no network code by design. Nothing leaves your machine.',
+        'faq.q6': 'Do I need Python installed?',
+        'faq.a6': 'Only if you run the .py source. The compiled .exe works on its own.',
+        'au.kicker': 'a note from the author',
+        'au.title': 'Hi. I made this.',
+        'au.p1': 'This is the first program I’ve ever finished — and I want to say a few things while I have your attention.',
+        'au.love': 'Love each other.',
+        'au.love2': 'Be patient. Respect one another. Value one another. Think about life.',
+        'au.p2': 'There is nothing more important than that. Not success, not money, not even this program. All of it ends. Only what we give to others stays.',
+        'au.p3': 'I built Undo so you could build something of your own — a small idea, a small step, a small kindness turned into code. If you’re reading this, you already know what to do next.',
+        'au.p4': 'If you want to say hello, share a thought, or show me what you made — write to me. I read every message.',
+        'nav.manifest': 'Manifest',
+        'nav.download': 'DOWNLOAD',
+        'chk.kicker': 'every edit is verified',
+        'chk.title': 'No blind edits.',
+        'chk.intro': 'After every EDIT, Undo runs a syntax check on the file. If something is broken, the response says CHECK FAILED — and the AI sees it before you do. Nothing lands on disk silently.',
+        'chk.hint': 'CHECK RUNS AUTOMATICALLY AFTER EVERY EDIT',
+        'chk.c1': 'py_compile',
+        'chk.c2': 'json.loads',
+        'chk.c3': '</html>, script balance',
+        'chk.c4': 'braces & parens',
+        'chk.c5': 'manual check anytime',
+        'safe.kicker': 'transactional edits',
+        'safe.title': 'All blocks or nothing.',
+        'safe.intro': 'An EDIT can carry multiple FIND/REPLACE blocks. Undo checks every block first. If a single one is missing, nothing is applied — the file never ends up half-edited. And edits are idempotent: applying the same block twice changes nothing the second time.',
+        'safe.h1': 'Atomic',
+        'safe.p1': 'All FIND blocks are validated before any write. One missing block → nothing changes. No partial states.',
+        'safe.h2': 'Idempotent',
+        'safe.p2': 'If a block is not found, Undo reports it and skips. It never duplicates lines — applying an EDIT twice is a no-op the second time.',
+        'safe.h3': 'Line-ending safe',
+        'safe.p3': 'CRLF vs LF is normalised on the fly. A Unix edit applies cleanly to a Windows file without touching the rest.',
+        'self.kicker': 'the tool is its own test case',
+        'self.title': 'Undo can rewrite itself.',
+        'self.intro': 'Edit Undo’s own source with Undo. It saves a backup, runs the syntax check, then restarts itself in place — 800 ms later you’re looking at the new version, same window size and position.',
+        'self.hint': 'SAME WINDOW · NEW CODE · 800 MS',
+        'self.s1': 'edit Undo.py',
+        'self.s2': 'backup & check',
+        'self.s3': 'restart in place',
+        'self.s4': 'same window size',
+        'self.s5': 'new code running',
+        'chk.kicker': 'every edit is verified',
+        'chk.title': 'No blind edits.',
+        'chk.intro': 'After every EDIT, Undo runs a syntax check on the file. If something is broken, the response says CHECK FAILED — and the AI sees it before you do. Nothing lands on disk silently.',
+        'chk.hint': 'CHECK RUNS AUTOMATICALLY AFTER EVERY EDIT',
+        'chk.c1': 'py_compile',
+        'chk.c2': 'json.loads',
+        'chk.c3': '</html>, script balance',
+        'chk.c4': 'braces & parens',
+        'chk.c5': 'manual check anytime',
+        'safe.kicker': 'transactional edits',
+        'safe.title': 'All blocks or nothing.',
+        'safe.intro': 'An EDIT can carry multiple FIND/REPLACE blocks. Undo checks every block first. If a single one is missing, nothing is applied — the file never ends up half-edited. And edits are idempotent: applying the same block twice changes nothing the second time.',
+        'safe.h1': 'Atomic',
+        'safe.p1': 'All FIND blocks are validated before any write. One missing block → nothing changes. No partial states.',
+        'safe.h2': 'Idempotent',
+        'safe.p2': 'If a block is not found, Undo reports it and skips. It never duplicates lines — applying an EDIT twice is a no-op the second time.',
+        'safe.h3': 'Line-ending safe',
+        'safe.p3': 'CRLF vs LF is normalised on the fly. A Unix edit applies cleanly to a Windows file without touching the rest.',
+        'self.kicker': 'the tool is its own test case',
+        'self.title': 'Undo can rewrite itself.',
+        'self.intro': 'Edit Undo’s own source with Undo. It saves a backup, runs the syntax check, then restarts itself in place — 800 ms later you’re looking at the new version, same window size and position.',
+        'self.hint': 'SAME WINDOW · NEW CODE · 800 MS',
+        'self.s1': 'edit Undo.py',
+        'self.s2': 'backup & check',
+        'self.s3': 'restart in place',
+        'self.s4': 'same window size',
+        'self.s5': 'new code running',
+        'mem.u1h': 'New chat? No problem.',
+        'mem.u1p': 'Open a fresh AI chat, paste CTX:, and the assistant knows your project name, its goals, the errors you already fixed, and what’s still on the list.',
+        'mem.u2h': 'Come back a week later',
+        'mem.u2p': 'Undo never forgets. Every session ends where the next one begins — no re-explaining, no “remind me what we were doing”.',
+        'mem.u3h': 'Your own memory aid',
+        'mem.u3p': 'Not sure what this folder was for? Run CTX: and read it yourself — description, tasks, notes, history, all in one place.',
+        'cap9.h': 'Three languages, one click',
+        'cap9.p': 'The entire UI — menus, logs, manifest — switches between English, Russian and Chinese. Undo restarts itself and comes back in the chosen language.',
+        'tb.kicker': 'not only commands',
+        'tb.title': 'Everything in one click.',
+        'tb.intro': 'Undo is not just a command runner. The top menu gives you the same operations as buttons — a screenshot, the project context, the whole log, the manifest for the AI. No typing needed.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'The very first item in the AI menu. Click it once — the manifest is in your clipboard, ready to paste into any chat.',
+        'tb.t1h': 'Screenshot (window)',
+        'tb.t1p': 'One click — the active window goes straight to the clipboard as an image. No command, no filename, no path.',
+        'tb.t2h': 'Screenshot (full screen)',
+        'tb.t2p': 'Same, for the whole desktop. Ctrl+V into any chat — the AI sees everything.',
+        'tb.t3h': '📋 Copy context (CTX)',
+        'tb.t3p': 'Assemble the whole project memory — description, errors, tasks, log — and put it on the clipboard in one click.',
+        'tb.t4h': '📋 Copy log',
+        'tb.t4p': 'The full session log, ready to paste. Useful when something went wrong and you want the AI to see it.',
+        'tb.f1h': 'Open Folder · Recent',
+        'tb.f1p': 'Pick a project folder or jump to one of the last twenty. Undo remembers where you worked.',
+        'tb.f2h': 'Edit Description…',
+        'tb.f2p': 'Write what this project is about. It lands in .agent/desc.md and travels with the context every time.',
+        'tb.s1h': 'Font & Language',
+        'tb.s1p': 'Three fonts — VT323, Consolas, Courier New. Three languages — EN, RU, ZH. Undo restarts itself and comes back with your choice.',
+        'tb.f3h': 'Remembers everything',
+        'tb.f3p': 'Window size, position, recent projects, current project, chosen font and language — all restored on next launch.',
+        'term.k2': 'shortcuts that just work',
+        'term.t2': 'Like a real terminal — but friendlier.',
+        'term.hist.h': 'Command history',
+        'term.hist.p': 'Arrow keys cycle through what you typed. Same as in bash — just tap up and hit Enter.',
+        'term.rc.h': 'Context menu everywhere',
+        'term.rc.p': 'In the log: copy selection, copy the whole log, clear, show clipboard, paste to input. In the input line: cut, copy, paste, select all, clear.',
+        'term.ctrl.h': 'Works in any layout',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode. Russian, Chinese, German — same keys, same behaviour.',
+        'term.open.h': 'Open a file with the system app',
+        'term.open.p': 'CMD: open report.pdf — Undo calls the default handler. PDF in the viewer, .py in the editor, image in the gallery.',
+        'term.run.h': 'Launch any program',
+        'term.run.p': 'CMD: run calc — and the Windows calculator opens. Anything the shell can start, Undo can start.',
+        'term.folder.h': 'Jump to the Undo folder',
+        'term.folder.p': 'CMD: folder opens the folder where Undo lives — logs, backups, shots, config. One click from the terminal.',
+        'tb.kicker': 'not only commands',
+        'tb.title': 'Everything in one click.',
+        'tb.intro': 'Undo is not just a command runner. The top menu gives you the same operations as buttons — a screenshot, the project context, the whole log, the manifest for the AI. No typing needed.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'The very first item in the AI menu. Click it once — the manifest is in your clipboard, ready to paste into any chat.',
+        'tb.t1h': 'Screenshot (window)',
+        'tb.t1p': 'One click — the active window goes straight to the clipboard as an image. No command, no filename, no path.',
+        'tb.t2h': 'Screenshot (full screen)',
+        'tb.t2p': 'Same, for the whole desktop. Ctrl+V into any chat — the AI sees everything.',
+        'tb.t3h': '📋 Copy context (CTX)',
+        'tb.t3p': 'Assemble the whole project memory — description, errors, tasks, log — and put it on the clipboard in one click.',
+        'tb.t4h': '📋 Copy log',
+        'tb.t4p': 'The full session log, ready to paste. Useful when something went wrong and you want the AI to see it.',
+        'tb.f1h': 'Open Folder · Recent',
+        'tb.f1p': 'Pick a project folder or jump to one of the last twenty. Undo remembers where you worked.',
+        'tb.f2h': 'Edit Description…',
+        'tb.f2p': 'Write what this project is about. It lands in .agent/desc.md and travels with the context every time.',
+        'tb.s1h': 'Font & Language',
+        'tb.s1p': 'Three fonts — VT323, Consolas, Courier New. Three languages — EN, RU, ZH. Undo restarts itself and comes back with your choice.',
+        'tb.f3h': 'Remembers everything',
+        'tb.f3p': 'Window size, position, recent projects, current project, chosen font and language — all restored on next launch.',
+        'term.k2': 'shortcuts that just work',
+        'term.t2': 'Like a real terminal — but friendlier.',
+        'term.hist.h': 'Command history',
+        'term.hist.p': 'Arrow keys cycle through what you typed. Same as in bash — just tap up and hit Enter.',
+        'term.rc.h': 'Context menu everywhere',
+        'term.rc.p': 'In the log: copy selection, copy the whole log, clear, show clipboard, paste to input. In the input line: cut, copy, paste, select all, clear.',
+        'term.ctrl.h': 'Works in any layout',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode. Russian, Chinese, German — same keys, same behaviour.',
+        'term.open.h': 'Open a file with the system app',
+        'term.open.p': 'CMD: open report.pdf — Undo calls the default handler. PDF in the viewer, .py in the editor, image in the gallery.',
+        'term.run.h': 'Launch any program',
+        'term.run.p': 'CMD: run calc — and the Windows calculator opens. Anything the shell can start, Undo can start.',
+        'term.folder.h': 'Jump to the Undo folder',
+        'term.folder.p': 'CMD: folder opens the folder where Undo lives — logs, backups, shots, config. One click from the terminal.',
+        'tb.kicker': 'not only commands',
+        'tb.title': 'Everything in one click.',
+        'tb.intro': 'Undo is not just a command runner. The top menu gives you the same operations as buttons — a screenshot, the project context, the whole log, the manifest for the AI. No typing needed.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'The very first item in the AI menu. Click it once — the manifest is in your clipboard, ready to paste into any chat.',
+        'tb.t1h': 'Screenshot (window)',
+        'tb.t1p': 'One click — the active window goes straight to the clipboard as an image. No command, no filename, no path.',
+        'tb.t2h': 'Screenshot (full screen)',
+        'tb.t2p': 'Same, for the whole desktop. Ctrl+V into any chat — the AI sees everything.',
+        'tb.t3h': '📋 Copy context (CTX)',
+        'tb.t3p': 'Assemble the whole project memory — description, errors, tasks, log — and put it on the clipboard in one click.',
+        'tb.t4h': '📋 Copy log',
+        'tb.t4p': 'The full session log, ready to paste. Useful when something went wrong and you want the AI to see it.',
+        'tb.f1h': 'Open Folder · Recent',
+        'tb.f1p': 'Pick a project folder or jump to one of the last twenty. Undo remembers where you worked.',
+        'tb.f2h': 'Edit Description…',
+        'tb.f2p': 'Write what this project is about. It lands in .agent/desc.md and travels with the context every time.',
+        'tb.s1h': 'Font & Language',
+        'tb.s1p': 'Three fonts — VT323, Consolas, Courier New. Three languages — EN, RU, ZH. Undo restarts itself and comes back with your choice.',
+        'tb.f3h': 'Remembers everything',
+        'tb.f3p': 'Window size, position, recent projects, current project, chosen font and language — all restored on next launch.',
+        'term.k2': 'shortcuts that just work',
+        'term.t2': 'Like a real terminal — but friendlier.',
+        'term.hist.h': 'Command history',
+        'term.hist.p': 'Arrow keys cycle through what you typed. Same as in bash — just tap up and hit Enter.',
+        'term.rc.h': 'Context menu everywhere',
+        'term.rc.p': 'In the log: copy selection, copy the whole log, clear, show clipboard, paste to input. In the input line: cut, copy, paste, select all, clear.',
+        'term.ctrl.h': 'Works in any layout',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A are handled by physical keycode. Russian, Chinese, German — same keys, same behaviour.',
+        'term.open.h': 'Open a file with the system app',
+        'term.open.p': 'CMD: open report.pdf — Undo calls the default handler. PDF in the viewer, .py in the editor, image in the gallery.',
+        'term.run.h': 'Launch any program',
+        'term.run.p': 'CMD: run calc — and the Windows calculator opens. Anything the shell can start, Undo can start.',
+        'term.folder.h': 'Jump to the Undo folder',
+        'term.folder.p': 'CMD: folder opens the folder where Undo lives — logs, backups, shots, config. One click from the terminal.',
+        'man.kicker': 'setup in one message',
+        'man.title': 'Send the manifest. That’s the whole setup.',
+        'man.intro': 'Undo ships with a manifest — a single text document that tells any AI assistant how to work with the agent. Copy it, paste it into a new chat, and the AI instantly knows all the commands, the rules, and the backup policy. No training, no configuration.',
+        'man.step1': 'Open Undo → AI menu',
+        'man.step2': 'Click “Copy manifest for AI”',
+        'man.step3': 'Paste it in any chat',
+        'man.step4': 'AI is ready to work',
+        'man.foot': 'Works with ChatGPT, Claude, DeepSeek, Gemini, local LLMs. Anything that can display a text block with a Copy button.',
+        'man.hint': 'THE MANIFEST IS BUILT INTO THE PROGRAM',
+        'man.copy': 'COPY MANIFEST',
+        'dl.kicker': 'download',
+        'dl.title': 'Get Undo for Windows.',
+        'dl.intro': 'A single installer. One folder on your machine. No Python required, no account, no network.',
+        'dl.btn': 'DOWNLOAD UNDO_SETUP.EXE',
+        'dl.s1': 'installer size',
+        'dl.s2': '64-bit Windows',
+        'dl.s3': 'current version',
+        'dl.s4': 'free and open',
+        'dl.note': 'Installs into %LOCALAPPDATA%\\Undo. Creates a desktop shortcut. Includes an uninstaller.',
+        'fin.kicker': 'READY WHEN YOU ARE',
+        'fin.title': 'Your AI just received a workstation.',
+        'fin.p': 'Explore the project. Make changes. Check the result. Return to any version — command after command.',
+        'fin.cta': 'EXPLORE COMMANDS'
+      },
+
+      ru: {
+        'nav.capabilities': 'Возможности',
+        'nav.toolbar': 'Меню',
+        'nav.commands': 'Команды',
+        'nav.workflow': 'Принцип работы',
+        'nav.help': 'Помощь',
+        'hero.kicker': 'командная станция для ИИ',
+        'hero.title1': 'Дайте ИИ',
+        'hero.title2': 'доступ к',
+        'hero.title3': 'работе.',
+        'hero.copy': 'UNDO — локальный агент, который превращает запросы ИИ в реальные действия с файлами. Читайте код, создавайте структуру, исправляйте ошибки и управляйте проектом через короткие понятные команды.',
+        'hero.cta1': 'ПОСМОТРЕТЬ, КАК РАБОТАЕТ',
+        'hero.cta2': 'ВОЗМОЖНОСТИ',
+        'stat1': 'инструментов для проекта',
+        'stat2': 'бэкап перед изменением',
+        'stat3': 'лог каждой команды',
+        'stat4': 'агент на вашем компьютере',
+        'cap.kicker': 'за пределами обычного чата',
+        'cap.title1': 'ИИ предлагает.',
+        'cap.title2': 'UNDO выполняет.',
+        'cap.intro': 'Вместо советов «откройте файл и вставьте код» — команда, которая делает работу. Вместо догадок — фактическое содержимое проекта. Вместо риска потерять изменения — бэкапы и откат.',
+        'cap1.h': 'Полный доступ к проектным операциям',
+        'cap1.p': 'Создание, чтение, поиск, переименование, удаление и точечное редактирование файлов. Папки, дерево проекта, статистика и хеши — тоже командами.',
+        'cap2.h': 'Контекст, который не теряется',
+        'cap2.p': 'Описание проекта, журнал, задачи, заметки и решения хранятся вместе. Команда CTX собирает их для ИИ.',
+        'cap3.h': 'Управление изменениями',
+        'cap3.p': 'Бэкап перед правкой, сравнение с предыдущей версией, восстановление файла и настройка хранения копий.',
+        'cap4.h': 'Проверка результата на месте',
+        'cap4.p': 'Синтаксические проверки для Python, JSON, HTML и JavaScript. После EDIT видно, прошла ли проверка.',
+        'cap5.h': 'Диагностика без переключений',
+        'cap5.p': 'Поиск текста и регулярных выражений, чтение нужных строк, состояние проекта и лог — прямо в рабочем цикле.',
+        'cap6.h': 'Данные для следующего шага',
+        'cap6.p': 'Контекст, логи и результаты команд возвращаются в буфер. Вставьте ответ в чат — ИИ продолжит предметно.',
+        'cap7.h': 'Ctrl+C в любой раскладке',
+        'cap7.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A обрабатываются по физическому коду клавиши — работают в русской, китайской и любой другой раскладке, без переключения.',
+        'cap8.h': 'Undo умеет переписать себя',
+        'cap8.p': 'Отредактируйте исходники Undo через сам Undo. Он сделает бэкап, проверит синтаксис и перезапустится на месте — инструмент сам себе тест.',
+        'clean.kicker': 'бэкапы убирают себя сами',
+        'clean.title': 'Никаких завалов из старых копий.',
+        'clean.intro': 'Каждая правка делает бэкап. При каждом запуске Undo наводит порядок: удаляет старше 30 дней, оставляет только 30 свежих версий на файл, и не трогает ничего моложе часа.',
+        'clean.intro2': 'Настраивается прямо из окна:',
+        'mem.kicker': 'проект помнит себя',
+        'mem.title': 'Каждая сессия продолжает предыдущую.',
+        'mem.intro': 'Внутри каждого проекта Undo держит маленькую папку .agent/. ИИ подхватывает работу одной командой — без повторных объяснений истории.',
+        'mem.c1': 'собрать контекст',
+        'mem.c2': 'добавить заметку',
+        'mem.c3': 'добавить задачу',
+        'mem.c4': 'отметить выполненной',
+        'mem.c5': 'список задач',
+        'mem.c6': 'напоминание раз в N правок',
+        'mem.foot': 'Каждые N правок Undo напоминает — и копирует контекст прямо в буфер, готовый к вставке в любой чат.',
+        'term.kicker': 'не только мост к ИИ',
+        'term.title1': 'Undo — это ещё и',
+        'term.title2': 'терминал.',
+        'term.intro': 'Наберите что угодно, что не похоже на команду ИИ — и оно уйдёт прямо в cmd.exe, а вывод появится в том же логе. Переключайтесь между работой с ИИ и работой с машиной, не покидая окна.',
+        'term.hint': 'ЧТО УГОДНО — УХОДИТ В CMD.EXE',
+        'term.c1': 'список файлов',
+        'term.c2': 'сменить папку',
+        'term.c3': 'эхо',
+        'term.c4': 'python',
+        'term.c5': 'pip',
+        'term.c6': 'powershell',
+        'term.c7': 'очистить лог',
+        'term.c8': 'список команд',
+        'term.c9': 'история команд',
+        'term.c10': 'калькулятор',
+        'shots.kicker': 'ИИ видит ваш экран',
+        'shots.title1': 'Показать — вместо описания.',
+        'shots.intro': 'Команда SHOT делает снимок экрана и кладёт его прямо в буфер — картинкой, не текстом. Вставьте в любой чат — ИИ увидит ровно то, что видите вы. Ни плагинов, ни шаринга экрана, ни разрешений.',
+        'shots.hint': 'КАРТИНКА ИДЁТ В БУФЕР, НЕ ПУТЬ К ФАЙЛУ',
+        'shots.c1': 'активное окно',
+        'shots.c2': 'весь экран',
+        'shots.c3': 'окно по имени',
+        'shots.c4': 'через N секунд',
+        'shots.c5': 'сохранить в файл',
+        'shots.u1h': 'Спросить, что на экране',
+        'shots.u1p': 'ИИ пишет «SHOT: full», вы жмёте Ctrl+V в чат. ИИ видит весь рабочий стол — без описаний.',
+        'shots.u2h': 'Отладка без шаринга экрана',
+        'shots.u2p': 'Ошибка в окне? Просто SHOT: и вставьте. Работает в любом чате, в любое время, из любого места.',
+        'shots.u3h': 'Увидеть результат отрисовки',
+        'shots.u3p': 'Запустите программу, сделайте SHOT: wait=2, вставьте. ИИ проверит вёрстку, цвета и ошибки визуально.',
+        'cmd.kicker': 'командный интерфейс',
+        'cmd.title': 'Одна строка — одно действие.',
+        'cmd.intro': 'Команды читаются как инструкции. Первая строка определяет операцию, следующие строки содержат путь, текст или параметры.',
+        'cmd1': 'создать / заменить',
+        'cmd2': 'прочитать строки',
+        'cmd3': 'точечная правка блоками',
+        'cmd4': 'поиск по проекту',
+        'cmd5': 'проверить синтаксис',
+        'cmd6': 'сравнить с бэкапом',
+        'cmd7': 'восстановить версию',
+        'cmd8': 'добавить задачу',
+        'cmd9': 'дописать / удалить',
+        'cmd10': 'файлы и папки',
+        'cmd11': 'первые / последние N',
+        'cmd12': 'размер, слова, md5+sha1',
+        'cmd13': 'поиск в файле',
+        'cmd14': 'поиск по regex',
+        'cmd15': 'папка / дерево проекта',
+        'cmd16': 'калькулятор',
+        'cmd17': '18 шаблонов кода',
+        'cmd18': 'список / сравнение',
+        'cmd19': 'правила хранения',
+        'cmd20': 'память проекта',
+        'cmd21': 'напоминание про контекст',
+        'cmd22': 'скриншоты',
+        'cmd23': 'системные команды',
+        'cmd24': 'последние N строк лога',
+        'cmd25': 'история команд',
+        'cmd26': 'меню копирования',
+        'cmd25': 'история команд',
+        'cmd26': 'меню копирования',
+        'demo.hint': 'ПРИМЕР ВЫПОЛНЕНИЯ КОМАНДЫ',
+        'demo.hint.search': 'ПРИМЕР ПОИСКА ПО ПРОЕКТУ',
+        'demo.hint.restore': 'ПРИМЕР ВОССТАНОВЛЕНИЯ ВЕРСИИ',
+        'wf.kicker': 'замкнутый цикл',
+        'wf.title1': 'ИИ видит каждый результат.',
+        'wf.title2': 'Вы задаёте темп.',
+        'wf.intro': 'Вся работа проходит через буфер обмена. Нет скрытых действий: команда и ответ отображаются в журнале Undo.',
+        'wf1.h': 'Поставьте задачу', 'wf1.p': 'Опишите результат, которого хотите добиться. Если нужен контекст, сначала запросите CTX.',
+        'wf2.h': 'Скопируйте команду', 'wf2.p': 'ИИ оформит команду в отдельном блоке. Кнопка Copy положит её в буфер обмена.',
+        'wf3.h': 'Undo выполнит её', 'wf3.p': 'Агент распознает маркер, выполнит действие, покажет лог и вернёт результат.',
+        'wf4.h': 'Верните ответ в чат', 'wf4.p': 'Вставьте результат. ИИ проверит его и подготовит следующий обоснованный шаг.',
+        'saf.kicker': 'контроль изменений',
+        'saf.title1': 'Смелые правки.',
+        'saf.title2': 'Без страха потерять файл.',
+        'saf.intro': 'Перед FILE, EDIT, DELETE и RENAME Undo сохраняет резервную копию. Можно посмотреть diff, откатить нужную версию и настроить автоматическую очистку старых бэкапов.',
+        'saf.b1': 'бэкап сохранён', 'saf.b2': 'бэкап сохранён', 'saf.b3': 'бэкап сохранён', 'saf.b4': 'откат изменения',
+        'help.kicker': 'помощь о программе',
+        'help.title': 'Что такое Undo на самом деле?',
+        'help.intro': 'Небольшой локальный агент, который даёт любому ИИ-ассистенту рабочую руку на вашем компьютере — через буфер обмена, с полной прозрачностью и бэкапами.',
+        'help.what': 'Что это',
+        'help.what.p': 'Undo — это десктопное приложение в стиле терминала. Вы запускаете его локально. ИИ пишет команду. Вы копируете её в буфер обмена. Undo читает буфер, выполняет команду на диске и записывает результат обратно. Вы вставляете результат в чат. Это весь протокол.',
+        'help.what.p2': 'Ни сервера. Ни аккаунта. Ни интернета. Ни API-ключей. Ни телеметрии. Всё происходит на вашей машине.',
+        'help.why': 'Зачем это нужно',
+        'help.why.p': 'Современные ИИ-ассистенты отлично пишут код и рассуждают о нём, но не могут касаться вашей файловой системы. Облачный «tool use» требует аккаунтов, ключей, сети и доверия третьей стороне. Undo заменяет всё это буфером обмена — единственным каналом, который поддерживают любая ОС, любой браузер и любой чат.',
+        'help.steps': 'Как пользоваться — пошагово',
+        'help.s1': 'Запустите Undo.py или Undo.exe.',
+        'help.s2': 'В чате с ИИ напишите: «Создай Python-скрипт, который печатает hello».',
+        'help.s3': 'ИИ ответит блоком, как показано выше.',
+        'help.s4': 'Нажмите Copy на этом блоке.',
+        'help.s5': 'Undo выполнит команду за секунду. Файл сохранится, а результат попадёт в буфер.',
+        'help.s6': 'Вставьте результат в чат.',
+        'help.s7': 'ИИ подтвердит и продолжит.',
+        'help.rules': 'Что ИИ должен помнить всегда',
+        'help.r1': 'Прямого доступа к файлам нет — только через Undo.',
+        'help.r2': 'Пользователь — посредник: он копирует и вставляет блоки.',
+        'help.r3': 'Одна команда = один блок кода. Не смешивать команды.',
+        'help.r4': 'Если EDIT не сработал — сначала прочитать файл, затем новый EDIT.',
+        'help.r5': 'Не выдумывать пути — спросить у Undo: TREE: или LIST:.',
+        'help.r6': 'Всегда проверять результат — Undo возвращает его в буфер.',
+        'help.r7': 'Для длинных команд Undo возвращает компактную сводку: N строк.',
+        'help.safety': 'Безопасность и приватность',
+        'help.sf1': 'Сетевого доступа нет по замыслу. Всё локально.',
+        'help.sf2': 'Перед каждой опасной операцией создаётся бэкап.',
+        'help.sf3': 'Авто-очистка оставляет только N последних версий каждого файла.',
+        'help.sf4': 'Пользователь всегда посредник. Ничего не запускается без копирования.',
+        'help.sf5': 'Как с любой оболочкой — не вставляйте команды, которые не понимаете.',
+        'help.ai': 'Совместимые ИИ-ассистенты',
+        'help.ai.p': 'Всё, что умеет показывать текстовый блок с кнопкой Copy: ChatGPT, Claude, DeepSeek, Gemini, локальные фронтенды (Ollama, LM Studio, SillyTavern), даже Блокнот.',
+        'help.license': 'Лицензия',
+        'help.license.p': 'MIT. Берите, форкайте, публикуйте, продавайте — без вопросов.',
+        'faq.kicker': 'вопросы и ответы',
+        'faq.title': 'Система под вашим контролем.',
+        'faq.q1': 'Undo сам выполняет команды?',
+        'faq.a1': 'Да. Когда команда с маркером попадает в буфер, Undo распознаёт её автоматически и показывает результат в журнале.',
+        'faq.q2': 'Что если команда не сработала?',
+        'faq.a2': 'Undo возвращает сообщение об ошибке. Перед следующей правкой ИИ может запросить содержимое файла или нужные строки.',
+        'faq.q3': 'Можно ли посмотреть, что изменилось?',
+        'faq.a3': 'Да. Команда DIFF показывает разницу с последним бэкапом. RESTORE восстанавливает выбранную версию, сохраняя текущее состояние.',
+        'faq.q4': 'Как передать проектный контекст?',
+        'faq.a4': 'Выполните CTX и вставьте собранный контекст в чат. Он включает метаданные проекта, описание, заметки, задачи и журнал.',
+        'faq.q5': 'Мои данные куда-то отправляются?',
+        'faq.a5': 'Нет. В Undo нет сетевого кода по замыслу. Ничего не покидает вашу машину.',
+        'faq.q6': 'Нужен ли установленный Python?',
+        'faq.a6': 'Только если запускаете .py. Скомпилированный .exe работает сам по себе.',
+        'au.kicker': 'слово от автора',
+        'au.title': 'Привет. Это сделал я.',
+        'au.p1': 'Это первая программа в моей жизни, которую я довёл до конца. И я хочу сказать несколько вещей, пока у меня есть ваше внимание.',
+        'au.love': 'Любите друг друга.',
+        'au.love2': 'Проявляйте терпение. Уважайте. Цените. Думайте о жизни.',
+        'au.p2': 'Нет ничего важнее этого. Ни успеха, ни денег, ни даже этой программы. Всё заканчивается. Остаётся только то, что мы отдаём другим.',
+        'au.p3': 'Я собрал Undo, чтобы вы могли собрать своё — маленькую идею, маленький шаг, маленькую доброту, превращённую в код. Если вы это читаете — вы уже знаете, что делать дальше.',
+        'au.p4': 'Если хотите поздороваться, поделиться мыслью или показать, что вы сделали — напишите мне. Я читаю каждое письмо.',
+        'nav.manifest': 'Манифест',
+        'nav.download': 'СКАЧАТЬ',
+        'chk.kicker': 'каждая правка проверяется',
+        'chk.title': 'Никаких слепых правок.',
+        'chk.intro': 'После каждого EDIT Undo проверяет синтаксис файла. Если что-то сломано — в ответе будет CHECK FAILED, и ИИ увидит это раньше вас. Ничего не ложится на диск молча.',
+        'chk.hint': 'ПРОВЕРКА ЗАПУСКАЕТСЯ ПОСЛЕ КАЖДОГО EDIT',
+        'chk.c1': 'py_compile',
+        'chk.c2': 'json.loads',
+        'chk.c3': '</html>, баланс script',
+        'chk.c4': 'скобки { } и ( )',
+        'chk.c5': 'ручная проверка в любой момент',
+        'safe.kicker': 'транзакционные правки',
+        'safe.title': 'Все блоки или ничего.',
+        'safe.intro': 'В одном EDIT может быть несколько блоков FIND/REPLACE. Undo сначала проверяет каждый. Если хоть один не найден — ничего не применяется, файл не остаётся половинчатым. И правки идемпотентны: применив тот же блок дважды, вы ничего не измените.',
+        'safe.h1': 'Атомарно',
+        'safe.p1': 'Все FIND-блоки проверяются до записи. Один не найден → ничего не меняется. Никаких половинчатых состояний.',
+        'safe.h2': 'Идемпотентно',
+        'safe.p2': 'Если блок не найден, Undo сообщит и пропустит. Он никогда не создаёт копии строк — применить EDIT дважды — то же самое, что один раз.',
+        'safe.h3': 'Безопасно к переносам строк',
+        'safe.p3': 'CRLF и LF нормализуются на ходу. Unix-правка ложится на Windows-файл без порчи остального.',
+        'self.kicker': 'инструмент сам себе тест',
+        'self.title': 'Undo умеет переписать себя.',
+        'self.intro': 'Отредактируйте исходники Undo через сам Undo. Он сделает бэкап, прогонит проверку синтаксиса и перезапустится на месте — через 800 мс вы видите новую версию в том же окне.',
+        'self.hint': 'ТО ЖЕ ОКНО · НОВЫЙ КОД · 800 МС',
+        'self.s1': 'правим Undo.py',
+        'self.s2': 'бэкап и проверка',
+        'self.s3': 'перезапуск на месте',
+        'self.s4': 'то же окно',
+        'self.s5': 'новый код работает',
+        'tb.kicker': 'не только команды',
+        'tb.title': 'Всё в один клик.',
+        'tb.intro': 'Undo — это не только раннер команд. Верхнее меню даёт те же операции кнопками: скриншот, контекст проекта, весь лог, манифест для ИИ. Печатать ничего не надо.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'Самый первый пункт в меню AI. Один клик — манифест в буфере, готов к вставке в любой чат.',
+        'tb.t1h': 'Скриншот (окно)',
+        'tb.t1p': 'Один клик — активное окно летит в буфер картинкой. Без команды, без имени файла, без путей.',
+        'tb.t2h': 'Скриншот (весь экран)',
+        'tb.t2p': 'То же самое для всего рабочего стола. Ctrl+V в любой чат — ИИ видит всё.',
+        'tb.t3h': '📋 Копировать контекст (CTX)',
+        'tb.t3p': 'Собрать всю память проекта — описание, ошибки, задачи, лог — и положить в буфер одним кликом.',
+        'tb.t4h': '📋 Копировать лог',
+        'tb.t4p': 'Полный лог сессии, готов к вставке. Полезно, когда что-то пошло не так и нужно, чтобы ИИ это увидел.',
+        'tb.f1h': 'Открыть папку · Недавние',
+        'tb.f1p': 'Выбрать папку проекта или прыгнуть в одну из последних двадцати. Undo помнит, где вы работали.',
+        'tb.f2h': 'Описание проекта…',
+        'tb.f2p': 'Напишите, о чём этот проект. Оно ляжет в .agent/desc.md и будет путешествовать с контекстом каждый раз.',
+        'tb.s1h': 'Шрифт и язык',
+        'tb.s1p': 'Три шрифта — VT323, Consolas, Courier New. Три языка — RU, EN, ZH. Undo перезапустится и вернётся с вашим выбором.',
+        'tb.f3h': 'Помнит всё',
+        'tb.f3p': 'Размер окна, позиция, недавние проекты, текущий проект, шрифт и язык — всё восстанавливается при следующем запуске.',
+        'term.k2': 'горячие клавиши, которые просто работают',
+        'term.t2': 'Как настоящий терминал — но дружелюбнее.',
+        'term.hist.h': 'История команд',
+        'term.hist.p': 'Стрелки листают то, что вы печатали. Как в bash — нажали вверх, нажали Enter.',
+        'term.rc.h': 'Контекстное меню везде',
+        'term.rc.p': 'В логе: копировать выделение, копировать весь лог, очистить, показать буфер, вставить в строку. В строке ввода: вырезать, копировать, вставить, выделить всё, очистить.',
+        'term.ctrl.h': 'Работает в любой раскладке',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A обрабатываются по физическому коду клавиши. Русская, китайская, немецкая — те же клавиши, то же поведение.',
+        'term.open.h': 'Открыть файл системным приложением',
+        'term.open.p': 'CMD: open report.pdf — Undo вызовет обработчик по умолчанию. PDF в просмотрщике, .py в редакторе, картинка в галерее.',
+        'term.run.h': 'Запустить любую программу',
+        'term.run.p': 'CMD: run calc — и калькулятор Windows открывается. Что угодно, что может запустить оболочка — то и Undo запустит.',
+        'term.folder.h': 'Прыгнуть в папку Undo',
+        'term.folder.p': 'CMD: folder открывает папку, где живёт Undo — логи, бэкапы, снимки, конфиг. Один клик из терминала.',
+        'tb.kicker': 'не только команды',
+        'tb.title': 'Всё в один клик.',
+        'tb.intro': 'Undo — это не только раннер команд. Верхнее меню даёт те же операции кнопками: скриншот, контекст проекта, весь лог, манифест для ИИ. Печатать ничего не надо.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'Самый первый пункт в меню AI. Один клик — манифест в буфере, готов к вставке в любой чат.',
+        'tb.t1h': 'Скриншот (окно)',
+        'tb.t1p': 'Один клик — активное окно летит в буфер картинкой. Без команды, без имени файла, без путей.',
+        'tb.t2h': 'Скриншот (весь экран)',
+        'tb.t2p': 'То же самое для всего рабочего стола. Ctrl+V в любой чат — ИИ видит всё.',
+        'tb.t3h': '📋 Копировать контекст (CTX)',
+        'tb.t3p': 'Собрать всю память проекта — описание, ошибки, задачи, лог — и положить в буфер одним кликом.',
+        'tb.t4h': '📋 Копировать лог',
+        'tb.t4p': 'Полный лог сессии, готов к вставке. Полезно, когда что-то пошло не так и нужно, чтобы ИИ это увидел.',
+        'tb.f1h': 'Открыть папку · Недавние',
+        'tb.f1p': 'Выбрать папку проекта или прыгнуть в одну из последних двадцати. Undo помнит, где вы работали.',
+        'tb.f2h': 'Описание проекта…',
+        'tb.f2p': 'Напишите, о чём этот проект. Оно ляжет в .agent/desc.md и будет путешествовать с контекстом каждый раз.',
+        'tb.s1h': 'Шрифт и язык',
+        'tb.s1p': 'Три шрифта — VT323, Consolas, Courier New. Три языка — RU, EN, ZH. Undo перезапустится и вернётся с вашим выбором.',
+        'tb.f3h': 'Помнит всё',
+        'tb.f3p': 'Размер окна, позиция, недавние проекты, текущий проект, шрифт и язык — всё восстанавливается при следующем запуске.',
+        'term.k2': 'горячие клавиши, которые просто работают',
+        'term.t2': 'Как настоящий терминал — но дружелюбнее.',
+        'term.hist.h': 'История команд',
+        'term.hist.p': 'Стрелки листают то, что вы печатали. Как в bash — нажали вверх, нажали Enter.',
+        'term.rc.h': 'Контекстное меню везде',
+        'term.rc.p': 'В логе: копировать выделение, копировать весь лог, очистить, показать буфер, вставить в строку. В строке ввода: вырезать, копировать, вставить, выделить всё, очистить.',
+        'term.ctrl.h': 'Работает в любой раскладке',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A обрабатываются по физическому коду клавиши. Русская, китайская, немецкая — те же клавиши, то же поведение.',
+        'term.open.h': 'Открыть файл системным приложением',
+        'term.open.p': 'CMD: open report.pdf — Undo вызовет обработчик по умолчанию. PDF в просмотрщике, .py в редакторе, картинка в галерее.',
+        'term.run.h': 'Запустить любую программу',
+        'term.run.p': 'CMD: run calc — и калькулятор Windows открывается. Что угодно, что может запустить оболочка — то и Undo запустит.',
+        'term.folder.h': 'Прыгнуть в папку Undo',
+        'term.folder.p': 'CMD: folder открывает папку, где живёт Undo — логи, бэкапы, снимки, конфиг. Один клик из терминала.',
+        'tb.kicker': 'не только команды',
+        'tb.title': 'Всё в один клик.',
+        'tb.intro': 'Undo — это не только раннер команд. Верхнее меню даёт те же операции кнопками: скриншот, контекст проекта, весь лог, манифест для ИИ. Печатать ничего не надо.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'Самый первый пункт в меню AI. Один клик — манифест в буфере, готов к вставке в любой чат.',
+        'tb.t1h': 'Скриншот (окно)',
+        'tb.t1p': 'Один клик — активное окно летит в буфер картинкой. Без команды, без имени файла, без путей.',
+        'tb.t2h': 'Скриншот (весь экран)',
+        'tb.t2p': 'То же самое для всего рабочего стола. Ctrl+V в любой чат — ИИ видит всё.',
+        'tb.t3h': '📋 Копировать контекст (CTX)',
+        'tb.t3p': 'Собрать всю память проекта — описание, ошибки, задачи, лог — и положить в буфер одним кликом.',
+        'tb.t4h': '📋 Копировать лог',
+        'tb.t4p': 'Полный лог сессии, готов к вставке. Полезно, когда что-то пошло не так и нужно, чтобы ИИ это увидел.',
+        'tb.f1h': 'Открыть папку · Недавние',
+        'tb.f1p': 'Выбрать папку проекта или прыгнуть в одну из последних двадцати. Undo помнит, где вы работали.',
+        'tb.f2h': 'Описание проекта…',
+        'tb.f2p': 'Напишите, о чём этот проект. Оно ляжет в .agent/desc.md и будет путешествовать с контекстом каждый раз.',
+        'tb.s1h': 'Шрифт и язык',
+        'tb.s1p': 'Три шрифта — VT323, Consolas, Courier New. Три языка — RU, EN, ZH. Undo перезапустится и вернётся с вашим выбором.',
+        'tb.f3h': 'Помнит всё',
+        'tb.f3p': 'Размер окна, позиция, недавние проекты, текущий проект, шрифт и язык — всё восстанавливается при следующем запуске.',
+        'term.k2': 'горячие клавиши, которые просто работают',
+        'term.t2': 'Как настоящий терминал — но дружелюбнее.',
+        'term.hist.h': 'История команд',
+        'term.hist.p': 'Стрелки листают то, что вы печатали. Как в bash — нажали вверх, нажали Enter.',
+        'term.rc.h': 'Контекстное меню везде',
+        'term.rc.p': 'В логе: копировать выделение, копировать весь лог, очистить, показать буфер, вставить в строку. В строке ввода: вырезать, копировать, вставить, выделить всё, очистить.',
+        'term.ctrl.h': 'Работает в любой раскладке',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A обрабатываются по физическому коду клавиши. Русская, китайская, немецкая — те же клавиши, то же поведение.',
+        'term.open.h': 'Открыть файл системным приложением',
+        'term.open.p': 'CMD: open report.pdf — Undo вызовет обработчик по умолчанию. PDF в просмотрщике, .py в редакторе, картинка в галерее.',
+        'term.run.h': 'Запустить любую программу',
+        'term.run.p': 'CMD: run calc — и калькулятор Windows открывается. Что угодно, что может запустить оболочка — то и Undo запустит.',
+        'term.folder.h': 'Прыгнуть в папку Undo',
+        'term.folder.p': 'CMD: folder открывает папку, где живёт Undo — логи, бэкапы, снимки, конфиг. Один клик из терминала.',
+        'tb.kicker': 'не только команды',
+        'tb.title': 'Всё в один клик.',
+        'tb.intro': 'Undo — это не только раннер команд. Верхнее меню даёт те же операции кнопками: скриншот, контекст проекта, весь лог, манифест для ИИ. Печатать ничего не надо.',
+        'tb.ai1h': '📋 Copy manifest for AI',
+        'tb.ai1p': 'Самый первый пункт в меню AI. Один клик — манифест в буфере, готов к вставке в любой чат.',
+        'tb.t1h': 'Скриншот (окно)',
+        'tb.t1p': 'Один клик — активное окно летит в буфер картинкой. Без команды, без имени файла, без путей.',
+        'tb.t2h': 'Скриншот (весь экран)',
+        'tb.t2p': 'То же самое для всего рабочего стола. Ctrl+V в любой чат — ИИ видит всё.',
+        'tb.t3h': '📋 Копировать контекст (CTX)',
+        'tb.t3p': 'Собрать всю память проекта — описание, ошибки, задачи, лог — и положить в буфер одним кликом.',
+        'tb.t4h': '📋 Копировать лог',
+        'tb.t4p': 'Полный лог сессии, готов к вставке. Полезно, когда что-то пошло не так и нужно, чтобы ИИ это увидел.',
+        'tb.f1h': 'Открыть папку · Недавние',
+        'tb.f1p': 'Выбрать папку проекта или прыгнуть в одну из последних двадцати. Undo помнит, где вы работали.',
+        'tb.f2h': 'Описание проекта…',
+        'tb.f2p': 'Напишите, о чём этот проект. Оно ляжет в .agent/desc.md и будет путешествовать с контекстом каждый раз.',
+        'tb.s1h': 'Шрифт и язык',
+        'tb.s1p': 'Три шрифта — VT323, Consolas, Courier New. Три языка — RU, EN, ZH. Undo перезапустится и вернётся с вашим выбором.',
+        'tb.f3h': 'Помнит всё',
+        'tb.f3p': 'Размер окна, позиция, недавние проекты, текущий проект, шрифт и язык — всё восстанавливается при следующем запуске.',
+        'term.k2': 'горячие клавиши, которые просто работают',
+        'term.t2': 'Как настоящий терминал — но дружелюбнее.',
+        'term.hist.h': 'История команд',
+        'term.hist.p': 'Стрелки листают то, что вы печатали. Как в bash — нажали вверх, нажали Enter.',
+        'term.rc.h': 'Контекстное меню везде',
+        'term.rc.p': 'В логе: копировать выделение, копировать весь лог, очистить, показать буфер, вставить в строку. В строке ввода: вырезать, копировать, вставить, выделить всё, очистить.',
+        'term.ctrl.h': 'Работает в любой раскладке',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A обрабатываются по физическому коду клавиши. Русская, китайская, немецкая — те же клавиши, то же поведение.',
+        'term.open.h': 'Открыть файл системным приложением',
+        'term.open.p': 'CMD: open report.pdf — Undo вызовет обработчик по умолчанию. PDF в просмотрщике, .py в редакторе, картинка в галерее.',
+        'term.run.h': 'Запустить любую программу',
+        'term.run.p': 'CMD: run calc — и калькулятор Windows открывается. Что угодно, что может запустить оболочка — то и Undo запустит.',
+        'term.folder.h': 'Прыгнуть в папку Undo',
+        'term.folder.p': 'CMD: folder открывает папку, где живёт Undo — логи, бэкапы, снимки, конфиг. Один клик из терминала.',
+        'man.kicker': 'настройка в одном сообщении',
+        'man.title': 'Отправьте манифест. Это вся настройка.',
+        'man.intro': 'Undo идёт вместе с манифестом — единый текстовый документ, который объясняет любому ИИ-ассистенту, как работать с агентом. Скопируйте, вставьте в новый чат — и ИИ сразу знает все команды, правила и политику бэкапов. Без обучения, без настройки.',
+        'man.step1': 'Откройте Undo → меню AI',
+        'man.step2': 'Нажмите «Copy manifest for AI»',
+        'man.step3': 'Вставьте в любой чат',
+        'man.step4': 'ИИ готов работать',
+        'man.foot': 'Работает с ChatGPT, Claude, DeepSeek, Gemini, локальными LLM. Со всем, что умеет показать текст с кнопкой Copy.',
+        'man.hint': 'МАНИФЕСТ ВСТРОЕН В ПРОГРАММУ',
+        'man.copy': 'КОПИРОВАТЬ МАНИФЕСТ',
+        'dl.kicker': 'скачать',
+        'dl.title': 'Скачать Undo для Windows.',
+        'dl.intro': 'Один установщик. Одна папка на вашем компьютере. Без Python, без аккаунта, без сети.',
+        'dl.btn': 'СКАЧАТЬ UNDO_SETUP.EXE',
+        'dl.s1': 'размер установщика',
+        'dl.s2': '64-бит Windows',
+        'dl.s3': 'текущая версия',
+        'dl.s4': 'свободно и открыто',
+        'dl.note': 'Устанавливается в %LOCALAPPDATA%\\Undo. Создаёт ярлык на рабочем столе. Включает деинсталлятор.',
+        'fin.kicker': 'КОГДА БУДЕТЕ ГОТОВЫ',
+        'fin.title': 'Ваш ИИ получил рабочую станцию.',
+        'fin.p': 'Исследуйте проект. Делайте изменения. Проверяйте результат. Возвращайтесь к любой версии — команда за командой.',
+        'fin.cta': 'ИЗУЧИТЬ КОМАНДЫ',
+        'cap9.h': 'Три языка, один клик',
+        'cap9.p': 'Весь интерфейс — меню, логи, манифест — переключается между английским, русским и китайским. Undo перезапускается и возвращается на выбранном языке.',
+        'mem.u1h': 'Новый чат? Без проблем.',
+        'mem.u1p': 'Откройте свежий чат, вставьте CTX: — и ассистент знает название проекта, его цели, уже исправленные ошибки и что ещё в списке.',
+        'mem.u2h': 'Вернулись через неделю',
+        'mem.u2p': 'Undo ничего не забывает. Каждая сессия продолжает предыдущую — без повторных объяснений и «напомни, о чём мы».',
+        'mem.u3h': 'Ваша собственная шпаргалка',
+        'mem.u3p': 'Забыли, для чего эта папка? Выполните CTX: и прочитайте — описание, задачи, заметки и история в одном месте.'
+      },
+
+      zh: {
+        'nav.capabilities': '功能',
+        'nav.toolbar': '菜单',
+        'nav.commands': '命令',
+        'nav.workflow': '工作流程',
+        'nav.help': '帮助',
+        'hero.kicker': 'AI 的命令站',
+        'hero.title1': '让 AI',
+        'hero.title2': '真正',
+        'hero.title3': '动手。',
+        'hero.copy': 'UNDO 是一个本地代理，把 AI 的请求变成真实的文件操作。用简短的命令读代码、建结构、修错误、管理项目。',
+        'hero.cta1': '查看工作原理',
+        'hero.cta2': '功能',
+        'stat1': '项目工具',
+        'stat2': '改动前自动备份',
+        'stat3': '每条命令都有日志',
+        'stat4': '代理运行在你的电脑上',
+        'cap.kicker': '超越普通聊天',
+        'cap.title1': 'AI 提建议。',
+        'cap.title2': 'UNDO 执行。',
+        'cap.intro': '不再是"打开文件粘贴代码"，而是一条能完成工作的命令。不再是猜测，而是项目的真实内容。不再怕丢失改动——有备份和回滚。',
+        'cap1.h': '完整的项目操作能力',
+        'cap1.p': '创建、读取、搜索、重命名、删除和精确编辑文件。目录、项目树、统计和哈希也通过命令完成。',
+        'cap2.h': '永不丢失的上下文',
+        'cap2.p': '项目描述、日志、任务、笔记和决策集中存储。CTX 命令把它们汇总给 AI。',
+        'cap3.h': '改动管理',
+        'cap3.p': '每次编辑前自动备份、与上一版本对比、恢复文件、配置存储策略。放心试验，随时回滚。',
+        'cap4.h': '就地验证结果',
+        'cap4.p': '支持 Python、JSON、HTML 和 JavaScript 的语法检查。EDIT 后立即看到检查结果。',
+        'cap5.h': '不切换窗口的诊断',
+        'cap5.p': '搜索文本和正则表达式、读取指定行、查看项目状态、读取日志——全在工作循环里。',
+        'cap6.h': '为下一步准备数据',
+        'cap6.p': '上下文、日志和命令结果都会回到剪贴板。粘贴回聊天——AI 继续有据可依。',
+        'cap7.h': 'Ctrl+C 在任何输入法下都可用',
+        'cap7.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理, 因此在俄语, 中文或任何其他键盘布局下都能工作 —— 无需切换。',
+        'cap8.h': 'Undo 可以重写自己',
+        'cap8.p': '用 Undo 编辑 Undo 自己的源码。它会保存备份、检查语法并在原地重启 —— 工具本身就是它自己的测试。',
+        'clean.kicker': '备份会自我清理',
+        'clean.title': '没有装满旧副本的文件夹。',
+        'clean.intro': '每次编辑都会创建备份。每次启动时, Undo 会整理: 删除超过 30 天的文件, 每个文件只保留 30 个最新版本, 且不碰任何一小时以内的内容。',
+        'clean.intro2': '可在同一窗口中完全配置:',
+        'mem.kicker': '项目记得自己',
+        'mem.title': '每次会话都延续上一次。',
+        'mem.intro': '在每个项目内部, Undo 保留一个小型 .agent/ 文件夹。AI 用一条命令就能从你离开的地方继续 —— 无需重新解释历史。',
+        'mem.c1': '收集上下文',
+        'mem.c2': '添加注释',
+        'mem.c3': '添加任务',
+        'mem.c4': '标记完成',
+        'mem.c5': '任务列表',
+        'mem.c6': '每 N 次编辑提醒一次',
+        'mem.foot': '每 N 次更改 Undo 都会提醒你 —— 并把上下文直接复制到剪贴板, 可直接粘贴到任何聊天。',
+        'term.kicker': '不只是 AI 的桥',
+        'term.title1': 'Undo 也是一个',
+        'term.title2': '终端。',
+        'term.intro': '输入任何不像 AI 命令的东西 —— 它会直接送到 cmd.exe，输出显示在同一个日志里。在同一窗口内在 AI 和机器之间切换。',
+        'term.hint': '输入任何内容 — 都会送到 CMD.EXE',
+        'term.c1': '列出文件',
+        'term.c2': '切换目录',
+        'term.c3': 'echo',
+        'term.c4': 'python',
+        'term.c5': 'pip',
+        'term.c6': 'powershell',
+        'term.c7': '清空日志',
+        'term.c8': '命令列表',
+        'term.c9': '命令历史',
+        'term.c10': '安全计算器',
+        'shots.kicker': 'AI 能看到你的屏幕',
+        'shots.title1': '展示, 而不是描述。',
+        'shots.intro': 'SHOT 命令截取屏幕并直接放入剪贴板 —— 作为图像, 而不是文本。粘贴到任何聊天中, AI 就会看到你看到的一切。不需要插件, 不需要共享屏幕, 不需要权限。',
+        'shots.hint': '图像进入剪贴板, 不是文件路径',
+        'shots.c1': '活动窗口',
+        'shots.c2': '整个屏幕',
+        'shots.c3': '按名称找窗口',
+        'shots.c4': 'N 秒后',
+        'shots.c5': '保存到文件',
+        'shots.u1h': '询问屏幕上有什么',
+        'shots.u1p': 'AI 写 "SHOT: full", 你在聊天中按 Ctrl+V。AI 看到整个桌面 —— 不需要描述。',
+        'shots.u2h': '无需共享屏幕即可调试',
+        'shots.u2p': '窗口中有错误? 只需 SHOT: 然后粘贴。适用于任何聊天, 任何时间, 任何地点。',
+        'shots.u3h': '查看渲染结果',
+        'shots.u3p': '运行程序, 用 SHOT: wait=2 截图, 粘贴。AI 可以视觉化地检查布局, 颜色和错误。',
+        'cmd.kicker': '命令界面',
+        'cmd.title': '一行——一个动作。',
+        'cmd.intro': '命令读起来就是指令。第一行定义操作，后面的行包含路径、文本或参数。',
+        'cmd1': '创建 / 覆盖',
+        'cmd2': '带行号读取',
+        'cmd3': '精确块编辑',
+        'cmd4': '项目内搜索',
+        'cmd5': '语法检查',
+        'cmd6': '与备份比较',
+        'cmd7': '恢复版本',
+        'cmd8': '添加任务',
+        'cmd9': '追加 / 删除',
+        'cmd10': '文件和文件夹',
+        'cmd11': '前 / 后 N 行',
+        'cmd12': '大小, 词数, md5+sha1',
+        'cmd13': '文件内搜索',
+        'cmd14': '正则搜索',
+        'cmd15': '文件夹 / 项目树',
+        'cmd16': '安全计算器',
+        'cmd17': '18 个代码模板',
+        'cmd18': '列表 / 比较',
+        'cmd19': '备份保留规则',
+        'cmd20': '项目记忆',
+        'cmd21': '上下文提醒',
+        'cmd22': '截图',
+        'cmd23': '系统命令',
+        'cmd24': '最后 N 行日志',
+        'cmd25': '命令历史',
+        'cmd26': '复制 / 粘贴菜单',
+        'cmd25': '命令历史',
+        'cmd26': '复制 / 粘贴菜单',
+        'demo.hint': '命令执行示例',
+        'demo.hint.search': '项目搜索示例',
+        'demo.hint.restore': '版本恢复示例',
+        'wf.kicker': '闭环',
+        'wf.title1': 'AI 看到每一个结果。',
+        'wf.title2': '节奏由你掌握。',
+        'wf.intro': '一切都通过剪贴板。没有隐藏动作：命令和响应都显示在 Undo 日志里。',
+        'wf1.h': '下达任务', 'wf1.p': '描述你想要的结果。需要上下文就先请求 CTX。',
+        'wf2.h': '复制命令', 'wf2.p': 'AI 会在单独的代码块里给出命令。Copy 按钮把它放进剪贴板。',
+        'wf3.h': 'Undo 执行', 'wf3.p': '代理识别标记、执行动作、显示日志并返回结果。',
+        'wf4.h': '把响应粘回聊天', 'wf4.p': '粘贴结果。AI 检查并准备下一步有依据的动作。',
+        'saf.kicker': '改动控制',
+        'saf.title1': '大胆修改。',
+        'saf.title2': '不怕丢文件。',
+        'saf.intro': '在 FILE、EDIT、DELETE 和 RENAME 之前，Undo 都会保存一份备份。可以看 diff、回滚到指定版本、配置自动清理旧备份。',
+        'saf.b1': '备份已保存', 'saf.b2': '备份已保存', 'saf.b3': '备份已保存', 'saf.b4': '撤销改动',
+        'help.kicker': '关于程序的帮助',
+        'help.title': 'Undo 究竟是什么？',
+        'help.intro': '一个很小的本地代理，通过剪贴板把任何 AI 助手变成你电脑上的有效操作者——完全透明，有备份。',
+        'help.what': '它是什么',
+        'help.what.p': 'Undo 是一个终端风格的桌面应用。你在本地运行。AI 写一条命令。你把它复制到剪贴板。Undo 读取剪贴板、在磁盘上执行命令并写回结果。你把结果粘回聊天。整个协议就是这样。',
+        'help.what.p2': '没有服务器。没有账号。不需要网络。不需要 API 密钥。没有遥测。一切都在你的机器上完成。',
+        'help.why': '为什么需要它',
+        'help.why.p': '现代 AI 助手擅长写代码和推理，但无法触碰你的文件系统。云端 "tool use" 需要账号、密钥、网络和第三方信任。Undo 用剪贴板取代了这一切——这是每种操作系统、每个浏览器和每个聊天都支持的通道。',
+        'help.steps': '如何使用——分步',
+        'help.s1': '运行 Undo.py 或 Undo.exe。',
+        'help.s2': '在 AI 聊天中说："创建一个打印 hello 的 Python 脚本。"',
+        'help.s3': 'AI 会给出上面那种格式的代码块。',
+        'help.s4': '点击该块上的 Copy。',
+        'help.s5': 'Undo 在 1 秒内执行。保存文件并把结果放进剪贴板。',
+        'help.s6': '把结果粘回聊天。',
+        'help.s7': 'AI 确认后继续。',
+        'help.rules': 'AI 必须永远记住',
+        'help.r1': '没有直接文件访问——只能通过 Undo。',
+        'help.r2': '用户是中介：他们复制粘贴代码块。',
+        'help.r3': '一条命令 = 一个代码块。不要混在一起。',
+        'help.r4': '如果 EDIT 失败——先读取文件，再发新的 EDIT。',
+        'help.r5': '不要凭空编造路径——问 Undo：TREE: 或 LIST:。',
+        'help.r6': '永远检查结果——Undo 会把它放回剪贴板。',
+        'help.r7': '长命令 Undo 返回紧凑摘要：N 行。',
+        'help.safety': '安全与隐私',
+        'help.sf1': '设计上没有网络访问。一切都在本地。',
+        'help.sf2': '每个破坏性操作都会先备份。',
+        'help.sf3': '自动清理只保留每个文件最近 N 个版本。',
+        'help.sf4': '用户永远是中介。没有复制就不会执行任何东西。',
+        'help.sf5': '和任何 shell 一样——不要粘贴你看不懂的命令。',
+        'help.ai': '兼容的 AI 助手',
+        'help.ai.p': '任何能显示带 Copy 按钮文本块的东西：ChatGPT、Claude、DeepSeek、Gemini、本地 LLM 前端（Ollama、LM Studio、SillyTavern），甚至记事本。',
+        'help.license': '许可证',
+        'help.license.p': 'MIT。拿去、fork、发布、出售——不问任何问题。',
+        'faq.kicker': '常见问题',
+        'faq.title': '系统始终由你掌控。',
+        'faq.q1': 'Undo 会自己执行命令吗？',
+        'faq.a1': '会。带标记的命令进入剪贴板后，Undo 会自动识别并把结果显示在日志里。',
+        'faq.q2': '如果命令不工作怎么办？',
+        'faq.a2': 'Undo 返回错误消息。下一次编辑前 AI 可以请求文件内容或特定行，以准备精确的修复。',
+        'faq.q3': '我能看到改了什么吗？',
+        'faq.a3': '能。DIFF 命令显示与最近备份的差异。RESTORE 恢复指定版本，并先保存当前状态。',
+        'faq.q4': '如何交接项目上下文？',
+        'faq.a4': '运行 CTX，把汇总的上下文粘到聊天里。它包含项目元数据、描述、笔记、任务和日志。',
+        'faq.q5': '我的数据会被发到哪里吗？',
+        'faq.a5': '不会。Undo 设计上没有网络代码。没有任何东西离开你的机器。',
+        'faq.q6': '需要安装 Python 吗？',
+        'faq.a6': '只有运行 .py 源码时才需要。编译好的 .exe 可以独立运行。',
+        'au.kicker': '来自作者的几句话',
+        'au.title': '你好。这是我做的。',
+        'au.p1': '这是我人生中第一个做完的程序。趁你还在看，我想说几句。',
+        'au.love': '彼此相爱。',
+        'au.love2': '耐心。尊重。珍惜。想想生活。',
+        'au.p2': '没有什么比这更重要。不是成功，不是金钱，甚至不是这个程序。一切都会结束。只有我们给予别人的东西会留下。',
+        'au.p3': '我做 Undo，是为了让你也能做出自己的东西——一个小小的想法、一小步、一点点变成代码的善意。如果你正在读这段话，你已经知道下一步该做什么了。',
+        'au.p4': '如果你想打个招呼、分享一个想法，或给我看你做了什么——写信给我。我会读每一封信。',
+        'nav.manifest': '清单',
+        'nav.download': '下载',
+        'chk.kicker': '每次编辑都会被验证',
+        'chk.title': '没有盲目的编辑。',
+        'chk.intro': '每次 EDIT 后, Undo 都会对文件运行语法检查。如果有问题, 响应会显示 CHECK FAILED —— AI 会比你先看到。没有任何东西会悄悄写入磁盘。',
+        'chk.hint': '检查在每次 EDIT 后自动运行',
+        'chk.c1': 'py_compile',
+        'chk.c2': 'json.loads',
+        'chk.c3': '</html>, script 平衡',
+        'chk.c4': '花括号 & 圆括号',
+        'chk.c5': '随时手动检查',
+        'safe.kicker': '事务性编辑',
+        'safe.title': '全部块或什么都不做。',
+        'safe.intro': '一次 EDIT 可以携带多个 FIND/REPLACE 块。Undo 首先检查每个块。如果其中一个缺失, 则不会应用任何更改 —— 文件永远不会半途而废。而且编辑是幂等的: 第二次应用同一个块什么都不会改变。',
+        'safe.h1': '原子性',
+        'safe.p1': '所有 FIND 块在写入前都会被验证。一个缺失 → 什么都不改变。没有部分状态。',
+        'safe.h2': '幂等性',
+        'safe.p2': '如果找不到块, Undo 会报告并跳过。它从不复制行 —— 应用两次 EDIT 第二次等同于无操作。',
+        'safe.h3': '换行符安全',
+        'safe.p3': 'CRLF 与 LF 会即时规范化。Unix 编辑会干净地应用到 Windows 文件, 不会触碰其他内容。',
+        'self.kicker': '工具本身就是它自己的测试',
+        'self.title': 'Undo 可以重写自己。',
+        'self.intro': '用 Undo 编辑 Undo 自己的源码。它会保存备份、运行语法检查, 然后在原地重启 —— 800 毫秒后你看到的就是新版本, 窗口大小和位置不变。',
+        'self.hint': '同一窗口 · 新代码 · 800 毫秒',
+        'self.s1': '编辑 Undo.py',
+        'self.s2': '备份并检查',
+        'self.s3': '原地重启',
+        'self.s4': '同一窗口大小',
+        'self.s5': '新代码运行中',
+        'tb.kicker': '不只是命令',
+        'tb.title': '一键完成所有事情。',
+        'tb.intro': 'Undo 不只是命令运行器。顶部菜单以按钮形式提供相同的操作 —— 截图、项目上下文、完整日志、AI 清单。无需输入。',
+        'tb.ai1h': '📋 为 AI 复制清单',
+        'tb.ai1p': 'AI 菜单的第一项。点击一次 —— 清单就在剪贴板里, 可直接粘贴到任何聊天。',
+        'tb.t1h': '截图 (窗口)',
+        'tb.t1p': '一键 —— 活动窗口直接以图像形式进入剪贴板。没有命令, 没有文件名, 没有路径。',
+        'tb.t2h': '截图 (全屏)',
+        'tb.t2p': '整个桌面也一样。Ctrl+V 粘贴到任何聊天 —— AI 看到一切。',
+        'tb.t3h': '📋 复制上下文 (CTX)',
+        'tb.t3p': '收集整个项目记忆 —— 描述、错误、任务、日志 —— 一键放入剪贴板。',
+        'tb.t4h': '📋 复制日志',
+        'tb.t4p': '完整会话日志, 可直接粘贴。当出了问题时让 AI 看到很有用。',
+        'tb.f1h': '打开文件夹 · 最近',
+        'tb.f1p': '选择一个项目文件夹或跳到最近二十个之一。Undo 记得你在哪里工作过。',
+        'tb.f2h': '编辑描述…',
+        'tb.f2p': '写下这个项目是关于什么的。它会进入 .agent/desc.md 并随每次上下文一起传递。',
+        'tb.s1h': '字体和语言',
+        'tb.s1p': '三种字体 —— VT323, Consolas, Courier New。三种语言 —— EN, RU, ZH。Undo 会重启并以你的选择回来。',
+        'tb.f3h': '记得一切',
+        'tb.f3p': '窗口大小、位置、最近的项目、当前项目、选定的字体和语言 —— 下次启动时全部恢复。',
+        'term.k2': '确实能用的快捷键',
+        'term.t2': '像一个真正的终端 —— 但更友好。',
+        'term.hist.h': '命令历史',
+        'term.hist.p': '箭头键循环你输入的内容。就像 bash —— 按上箭头, 按 Enter。',
+        'term.rc.h': '处处都有上下文菜单',
+        'term.rc.p': '日志中: 复制选中、复制整个日志、清除、显示剪贴板、粘贴到输入。输入行中: 剪切、复制、粘贴、全选、清除。',
+        'term.ctrl.h': '在任何输入法下都可用',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理。俄语、中文、德语 —— 相同的按键, 相同的行为。',
+        'term.open.h': '用系统应用打开文件',
+        'term.open.p': 'CMD: open report.pdf —— Undo 调用默认处理程序。PDF 在查看器中, .py 在编辑器中, 图片在图库中。',
+        'term.run.h': '启动任何程序',
+        'term.run.p': 'CMD: run calc —— Windows 计算器就会打开。shell 能启动的任何东西, Undo 都能启动。',
+        'term.folder.h': '跳到 Undo 文件夹',
+        'term.folder.p': 'CMD: folder 打开 Undo 所在的文件夹 —— 日志、备份、截图、配置。终端一键完成。',
+        'tb.kicker': '不只是命令',
+        'tb.title': '一键完成所有事情。',
+        'tb.intro': 'Undo 不只是命令运行器。顶部菜单以按钮形式提供相同的操作 —— 截图、项目上下文、完整日志、AI 清单。无需输入。',
+        'tb.ai1h': '📋 为 AI 复制清单',
+        'tb.ai1p': 'AI 菜单的第一项。点击一次 —— 清单就在剪贴板里, 可直接粘贴到任何聊天。',
+        'tb.t1h': '截图 (窗口)',
+        'tb.t1p': '一键 —— 活动窗口直接以图像形式进入剪贴板。没有命令, 没有文件名, 没有路径。',
+        'tb.t2h': '截图 (全屏)',
+        'tb.t2p': '整个桌面也一样。Ctrl+V 粘贴到任何聊天 —— AI 看到一切。',
+        'tb.t3h': '📋 复制上下文 (CTX)',
+        'tb.t3p': '收集整个项目记忆 —— 描述、错误、任务、日志 —— 一键放入剪贴板。',
+        'tb.t4h': '📋 复制日志',
+        'tb.t4p': '完整会话日志, 可直接粘贴。当出了问题时让 AI 看到很有用。',
+        'tb.f1h': '打开文件夹 · 最近',
+        'tb.f1p': '选择一个项目文件夹或跳到最近二十个之一。Undo 记得你在哪里工作过。',
+        'tb.f2h': '编辑描述…',
+        'tb.f2p': '写下这个项目是关于什么的。它会进入 .agent/desc.md 并随每次上下文一起传递。',
+        'tb.s1h': '字体和语言',
+        'tb.s1p': '三种字体 —— VT323, Consolas, Courier New。三种语言 —— EN, RU, ZH。Undo 会重启并以你的选择回来。',
+        'tb.f3h': '记得一切',
+        'tb.f3p': '窗口大小、位置、最近的项目、当前项目、选定的字体和语言 —— 下次启动时全部恢复。',
+        'term.k2': '确实能用的快捷键',
+        'term.t2': '像一个真正的终端 —— 但更友好。',
+        'term.hist.h': '命令历史',
+        'term.hist.p': '箭头键循环你输入的内容。就像 bash —— 按上箭头, 按 Enter。',
+        'term.rc.h': '处处都有上下文菜单',
+        'term.rc.p': '日志中: 复制选中、复制整个日志、清除、显示剪贴板、粘贴到输入。输入行中: 剪切、复制、粘贴、全选、清除。',
+        'term.ctrl.h': '在任何输入法下都可用',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理。俄语、中文、德语 —— 相同的按键, 相同的行为。',
+        'term.open.h': '用系统应用打开文件',
+        'term.open.p': 'CMD: open report.pdf —— Undo 调用默认处理程序。PDF 在查看器中, .py 在编辑器中, 图片在图库中。',
+        'term.run.h': '启动任何程序',
+        'term.run.p': 'CMD: run calc —— Windows 计算器就会打开。shell 能启动的任何东西, Undo 都能启动。',
+        'term.folder.h': '跳到 Undo 文件夹',
+        'term.folder.p': 'CMD: folder 打开 Undo 所在的文件夹 —— 日志、备份、截图、配置。终端一键完成。',
+        'tb.kicker': '不只是命令',
+        'tb.title': '一键完成所有事情。',
+        'tb.intro': 'Undo 不只是命令运行器。顶部菜单以按钮形式提供相同的操作 —— 截图、项目上下文、完整日志、AI 清单。无需输入。',
+        'tb.ai1h': '📋 为 AI 复制清单',
+        'tb.ai1p': 'AI 菜单的第一项。点击一次 —— 清单就在剪贴板里, 可直接粘贴到任何聊天。',
+        'tb.t1h': '截图 (窗口)',
+        'tb.t1p': '一键 —— 活动窗口直接以图像形式进入剪贴板。没有命令, 没有文件名, 没有路径。',
+        'tb.t2h': '截图 (全屏)',
+        'tb.t2p': '整个桌面也一样。Ctrl+V 粘贴到任何聊天 —— AI 看到一切。',
+        'tb.t3h': '📋 复制上下文 (CTX)',
+        'tb.t3p': '收集整个项目记忆 —— 描述、错误、任务、日志 —— 一键放入剪贴板。',
+        'tb.t4h': '📋 复制日志',
+        'tb.t4p': '完整会话日志, 可直接粘贴。当出了问题时让 AI 看到很有用。',
+        'tb.f1h': '打开文件夹 · 最近',
+        'tb.f1p': '选择一个项目文件夹或跳到最近二十个之一。Undo 记得你在哪里工作过。',
+        'tb.f2h': '编辑描述…',
+        'tb.f2p': '写下这个项目是关于什么的。它会进入 .agent/desc.md 并随每次上下文一起传递。',
+        'tb.s1h': '字体和语言',
+        'tb.s1p': '三种字体 —— VT323, Consolas, Courier New。三种语言 —— EN, RU, ZH。Undo 会重启并以你的选择回来。',
+        'tb.f3h': '记得一切',
+        'tb.f3p': '窗口大小、位置、最近的项目、当前项目、选定的字体和语言 —— 下次启动时全部恢复。',
+        'term.k2': '确实能用的快捷键',
+        'term.t2': '像一个真正的终端 —— 但更友好。',
+        'term.hist.h': '命令历史',
+        'term.hist.p': '箭头键循环你输入的内容。就像 bash —— 按上箭头, 按 Enter。',
+        'term.rc.h': '处处都有上下文菜单',
+        'term.rc.p': '日志中: 复制选中、复制整个日志、清除、显示剪贴板、粘贴到输入。输入行中: 剪切、复制、粘贴、全选、清除。',
+        'term.ctrl.h': '在任何输入法下都可用',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理。俄语、中文、德语 —— 相同的按键, 相同的行为。',
+        'term.open.h': '用系统应用打开文件',
+        'term.open.p': 'CMD: open report.pdf —— Undo 调用默认处理程序。PDF 在查看器中, .py 在编辑器中, 图片在图库中。',
+        'term.run.h': '启动任何程序',
+        'term.run.p': 'CMD: run calc —— Windows 计算器就会打开。shell 能启动的任何东西, Undo 都能启动。',
+        'term.folder.h': '跳到 Undo 文件夹',
+        'term.folder.p': 'CMD: folder 打开 Undo 所在的文件夹 —— 日志、备份、截图、配置。终端一键完成。',
+        'tb.kicker': '不只是命令',
+        'tb.title': '一键完成所有事情。',
+        'tb.intro': 'Undo 不只是命令运行器。顶部菜单以按钮形式提供相同的操作 —— 截图、项目上下文、完整日志、AI 清单。无需输入。',
+        'tb.ai1h': '📋 为 AI 复制清单',
+        'tb.ai1p': 'AI 菜单的第一项。点击一次 —— 清单就在剪贴板里, 可直接粘贴到任何聊天。',
+        'tb.t1h': '截图 (窗口)',
+        'tb.t1p': '一键 —— 活动窗口直接以图像形式进入剪贴板。没有命令, 没有文件名, 没有路径。',
+        'tb.t2h': '截图 (全屏)',
+        'tb.t2p': '整个桌面也一样。Ctrl+V 粘贴到任何聊天 —— AI 看到一切。',
+        'tb.t3h': '📋 复制上下文 (CTX)',
+        'tb.t3p': '收集整个项目记忆 —— 描述、错误、任务、日志 —— 一键放入剪贴板。',
+        'tb.t4h': '📋 复制日志',
+        'tb.t4p': '完整会话日志, 可直接粘贴。当出了问题时让 AI 看到很有用。',
+        'tb.f1h': '打开文件夹 · 最近',
+        'tb.f1p': '选择一个项目文件夹或跳到最近二十个之一。Undo 记得你在哪里工作过。',
+        'tb.f2h': '编辑描述…',
+        'tb.f2p': '写下这个项目是关于什么的。它会进入 .agent/desc.md 并随每次上下文一起传递。',
+        'tb.s1h': '字体和语言',
+        'tb.s1p': '三种字体 —— VT323, Consolas, Courier New。三种语言 —— EN, RU, ZH。Undo 会重启并以你的选择回来。',
+        'tb.f3h': '记得一切',
+        'tb.f3p': '窗口大小、位置、最近的项目、当前项目、选定的字体和语言 —— 下次启动时全部恢复。',
+        'term.k2': '确实能用的快捷键',
+        'term.t2': '像一个真正的终端 —— 但更友好。',
+        'term.hist.h': '命令历史',
+        'term.hist.p': '箭头键循环你输入的内容。就像 bash —— 按上箭头, 按 Enter。',
+        'term.rc.h': '处处都有上下文菜单',
+        'term.rc.p': '日志中: 复制选中、复制整个日志、清除、显示剪贴板、粘贴到输入。输入行中: 剪切、复制、粘贴、全选、清除。',
+        'term.ctrl.h': '在任何输入法下都可用',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理。俄语、中文、德语 —— 相同的按键, 相同的行为。',
+        'term.open.h': '用系统应用打开文件',
+        'term.open.p': 'CMD: open report.pdf —— Undo 调用默认处理程序。PDF 在查看器中, .py 在编辑器中, 图片在图库中。',
+        'term.run.h': '启动任何程序',
+        'term.run.p': 'CMD: run calc —— Windows 计算器就会打开。shell 能启动的任何东西, Undo 都能启动。',
+        'term.folder.h': '跳到 Undo 文件夹',
+        'term.folder.p': 'CMD: folder 打开 Undo 所在的文件夹 —— 日志、备份、截图、配置。终端一键完成。',
+        'tb.kicker': '不只是命令',
+        'tb.title': '一键完成所有事情。',
+        'tb.intro': 'Undo 不只是命令运行器。顶部菜单以按钮形式提供相同的操作 —— 截图、项目上下文、完整日志、AI 清单。无需输入。',
+        'tb.ai1h': '📋 为 AI 复制清单',
+        'tb.ai1p': 'AI 菜单的第一项。点击一次 —— 清单就在剪贴板里, 可直接粘贴到任何聊天。',
+        'tb.t1h': '截图 (窗口)',
+        'tb.t1p': '一键 —— 活动窗口直接以图像形式进入剪贴板。没有命令, 没有文件名, 没有路径。',
+        'tb.t2h': '截图 (全屏)',
+        'tb.t2p': '整个桌面也一样。Ctrl+V 粘贴到任何聊天 —— AI 看到一切。',
+        'tb.t3h': '📋 复制上下文 (CTX)',
+        'tb.t3p': '收集整个项目记忆 —— 描述、错误、任务、日志 —— 一键放入剪贴板。',
+        'tb.t4h': '📋 复制日志',
+        'tb.t4p': '完整会话日志, 可直接粘贴。当出了问题时让 AI 看到很有用。',
+        'tb.f1h': '打开文件夹 · 最近',
+        'tb.f1p': '选择一个项目文件夹或跳到最近二十个之一。Undo 记得你在哪里工作过。',
+        'tb.f2h': '编辑描述…',
+        'tb.f2p': '写下这个项目是关于什么的。它会进入 .agent/desc.md 并随每次上下文一起传递。',
+        'tb.s1h': '字体和语言',
+        'tb.s1p': '三种字体 —— VT323, Consolas, Courier New。三种语言 —— EN, RU, ZH。Undo 会重启并以你的选择回来。',
+        'tb.f3h': '记得一切',
+        'tb.f3p': '窗口大小、位置、最近的项目、当前项目、选定的字体和语言 —— 下次启动时全部恢复。',
+        'term.k2': '确实能用的快捷键',
+        'term.t2': '像一个真正的终端 —— 但更友好。',
+        'term.hist.h': '命令历史',
+        'term.hist.p': '箭头键循环你输入的内容。就像 bash —— 按上箭头, 按 Enter。',
+        'term.rc.h': '处处都有上下文菜单',
+        'term.rc.p': '日志中: 复制选中、复制整个日志、清除、显示剪贴板、粘贴到输入。输入行中: 剪切、复制、粘贴、全选、清除。',
+        'term.ctrl.h': '在任何输入法下都可用',
+        'term.ctrl.p': 'Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A 按物理键码处理。俄语、中文、德语 —— 相同的按键, 相同的行为。',
+        'term.open.h': '用系统应用打开文件',
+        'term.open.p': 'CMD: open report.pdf —— Undo 调用默认处理程序。PDF 在查看器中, .py 在编辑器中, 图片在图库中。',
+        'term.run.h': '启动任何程序',
+        'term.run.p': 'CMD: run calc —— Windows 计算器就会打开。shell 能启动的任何东西, Undo 都能启动。',
+        'term.folder.h': '跳到 Undo 文件夹',
+        'term.folder.p': 'CMD: folder 打开 Undo 所在的文件夹 —— 日志、备份、截图、配置。终端一键完成。',
+        'man.kicker': '一条消息即可完成设置',
+        'man.title': '发送清单。这就是全部的设置。',
+        'man.intro': 'Undo 附带清单 —— 一份告诉任何 AI 助手如何使用代理的文本文档。复制它, 粘贴到新聊天中, AI 立即知道所有命令, 规则和备份策略。无需训练, 无需配置。',
+        'man.step1': '打开 Undo → AI 菜单',
+        'man.step2': '点击 "Copy manifest for AI"',
+        'man.step3': '粘贴到任何聊天中',
+        'man.step4': 'AI 已准备好工作',
+        'man.foot': '适用于 ChatGPT, Claude, DeepSeek, Gemini, 本地 LLM。任何能显示带 Copy 按钮的文本块的东西。',
+        'man.hint': '清单内置于程序中',
+        'man.copy': '复制清单',
+        'dl.kicker': '下载',
+        'dl.title': '下载 Undo for Windows。',
+        'dl.intro': '一个安装程序。你机器上的一个文件夹。无需 Python, 无需账户, 无需网络。',
+        'dl.btn': '下载 UNDO_SETUP.EXE',
+        'dl.s1': '安装程序大小',
+        'dl.s2': '64 位 Windows',
+        'dl.s3': '当前版本',
+        'dl.s4': '自由开源',
+        'dl.note': '安装到 %LOCALAPPDATA%\\Undo。创建桌面快捷方式。包含卸载程序。',
+        'fin.kicker': '准备好了就开始',
+        'fin.title': '你的 AI 刚刚获得了一台工作站。',
+        'fin.p': '探索项目。动手改动。检查结果。回到任意版本——一条命令接一条命令。',
+        'fin.cta': '探索命令',
+        'cap9.h': '三种语言, 一键切换',
+        'cap9.p': '整个界面 —— 菜单、日志、清单 —— 在英语、俄语和中文之间切换。Undo 会重新启动并以所选语言回来。',
+        'mem.u1h': '新的聊天? 没问题。',
+        'mem.u1p': '打开一个新的 AI 聊天, 粘贴 CTX: —— 助手就会知道你的项目名称、目标、你已经修复的错误以及列表中还有什么。',
+        'mem.u2h': '一周后回来',
+        'mem.u2p': 'Undo 从不遗忘。每次会话都从上次结束的地方继续 —— 无需重新解释, 不用说"提醒我我们在做什么"。',
+        'mem.u3h': '你自己的记忆助手',
+        'mem.u3p': '不确定这个文件夹是做什么用的? 运行 CTX: 自己读 —— 描述、任务、注释、历史, 全都在一个地方。'
+      }
+    };
+
+    let currentLang = 'en';
+
+    function applyLang(lang) {
+      currentLang = lang;
+      document.documentElement.lang = lang;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const val = I18N[lang] && I18N[lang][key];
+        if (val) el.innerHTML = val;
+      });
+      const key = demos[activeDemo].hintKey;
+      hint.textContent = (I18N[lang] && I18N[lang][key]) || 'EXAMPLE COMMAND EXECUTION';
+      document.querySelectorAll('.lang-switch button').forEach(b => {
+        b.classList.toggle('active', b.dataset.lang === lang);
+      });
+    }
+
+    document.querySelectorAll('.lang-switch button').forEach(btn => {
+      btn.addEventListener('click', () => applyLang(btn.dataset.lang));
+    });
+
+    applyLang('en');
+  </script>
+</body>
+</html>
