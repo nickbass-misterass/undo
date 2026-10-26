@@ -6,7 +6,12 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog
 
-AGENT_DIR = Path(__file__).parent.resolve()
+if getattr(sys, "frozen", False):
+    # onefile-exe: __file__ лежит во временной папке распаковки,
+    # поэтому конфиг, логи, бэкапы и снимки держим рядом с самим exe
+    AGENT_DIR = Path(sys.executable).parent.resolve()
+else:
+    AGENT_DIR = Path(__file__).parent.resolve()
 DATA_DIR = AGENT_DIR / "Nepizdin"
 CONFIG_FILE = DATA_DIR / "config.json"
 LOGS_DIR = DATA_DIR / "logs"
@@ -23,6 +28,9 @@ DEFAULT_CONFIG = {
     "recent_projects": [],
     "current_project": None,
     "language": "en",
+    "auto_ctx_min": 0,
+    "cmd_timeout": 1800,
+    "headless": False,
 }
 def load_config():
     try:
@@ -37,6 +45,11 @@ def save_config(cfg):
             json.dump(cfg, f, ensure_ascii=False, indent=2)
     except: pass
 CFG = load_config()
+try:
+    if not CONFIG_FILE.exists():
+        save_config(CFG)   # первый запуск: сразу создаём файл настроек
+except Exception:
+    pass
 
 try:
     import pyperclip
@@ -68,7 +81,7 @@ _CMD_RE = re.compile(
     r'(FILE|EDIT|APPEND|DELETE|CMD|MKDIR|COPY|MOVE|RENAME|TOUCH|'
     r'TREE|READ|FIND|SEARCH|LIST|HEAD|TAIL|STAT|DIFF|COUNT|HASH|'
     r'BACKUPS|RESTORE|CLEANUP|BACKUP_RULE|REMIND|CALC|CHECK|SNIPPET|'
-    r'CTX|NOTE|TASK|SHOT|LOG|REGEX):'
+    r'CTX|NOTE|TASK|SHOT|LOG|REGEX|LANG|MANIFEST|PS):'
     r'\s*(.*)$', re.I
 )
 def detect_mode(text):
@@ -346,10 +359,154 @@ def collect_context(project_path):
             parts.append(f.read_text(encoding="utf-8", errors="replace")); parts.append("")
     return True, "\n".join(parts)
 
-def shot_screen(mode="window", title=None, save_path=None, delay=0):
+def find_window(title):
+    """Окно по части заголовка. Из нескольких подходящих берём самое крупное
+    видимое и не свёрнутое — иначе можно поймать служебную панель."""
+    try: import win32gui
+    except ImportError: return None
+    want = (title or "").strip().lower()
+    hits = []
+    def cb(h, _):
+        try:
+            if not win32gui.IsWindowVisible(h): return True
+            text = win32gui.GetWindowText(h) or ""
+            if not text: return True
+            if want and want not in text.lower(): return True
+            if win32gui.IsIconic(h):
+                # свёрнутое окно тоже подходит — перед снимком развернём
+                hits.append((1, 0, h, text))
+                return True
+            l, t, r, b = win32gui.GetWindowRect(h)
+            if r - l < 40 or b - t < 40: return True
+            hits.append((0, (r - l) * (b - t), h, text))
+        except Exception:
+            pass
+        return True
+    try: win32gui.EnumWindows(cb, None)
+    except Exception: return None
+    if not hits: return None
+    hits.sort(key=lambda x: (x[0], -x[1]))
+    return hits[0][2]
+
+_DPI_READY = False
+
+def _ensure_dpi_aware():
+    """Без этого координаты окна приходят в логических пикселях, а снимок —
+    в физических. На мониторах с разным масштабом окно снимается со сдвигом
+    или чёрным кадром. Ставим per-monitor DPI awareness (и на поток тоже —
+    если процесс уже создал окно, установка на процесс не сработает)."""
+    global _DPI_READY
+    if _DPI_READY: return
+    _DPI_READY = True
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        for name in ("SetProcessDpiAwarenessContext", "SetThreadDpiAwarenessContext"):
+            try:
+                fn = getattr(u, name, None)
+                if fn: fn(ctypes.c_void_p(-4))   # PER_MONITOR_AWARE_V2
+            except Exception:
+                pass
+        try: ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception: pass
+        try: u.SetProcessDPIAware()
+        except Exception: pass
+    except Exception:
+        pass
+
+def _virtual_origin():
+    """Левый верхний угол виртуального экрана. У второго монитора он бывает
+    отрицательным — без этой поправки область снимка уезжает."""
+    try:
+        import win32api
+        return (win32api.GetSystemMetrics(76), win32api.GetSystemMetrics(77))
+    except Exception:
+        return (0, 0)
+
+def _grab_region(l, t, r, b):
+    """Кусок виртуального экрана по любой области, включая второй монитор."""
+    try:
+        from PIL import ImageGrab
+        full = ImageGrab.grab(all_screens=True)
+        if full is None: return None
+        vx, vy = _virtual_origin()
+        x1, y1, x2, y2 = l - vx, t - vy, r - vx, b - vy
+        x1 = max(0, min(full.width - 1, int(x1)))
+        x2 = max(0, min(full.width, int(x2)))
+        y1 = max(0, min(full.height - 1, int(y1)))
+        y2 = max(0, min(full.height, int(y2)))
+        if x2 - x1 < 4 or y2 - y1 < 4: return None
+        return full.crop((x1, y1, x2, y2))
+    except Exception:
+        return None
+
+def _looks_blank(img):
+    """Полностью одноцветный кадр — признак того, что область взята не та."""
+    try:
+        return img.getbbox() is None
+    except Exception:
+        return False
+
+def _is_covered(hwnd, l, t, r, b):
+    """Перекрыто ли окно: если в контрольных точках сверху оказывается другое
+    окно, снимать с экрана нельзя — в кадр попадёт чужое содержимое
+    (частая беда, когда окно лежит на другом мониторе под браузером)."""
+    try:
+        import win32gui
+        pts = (((l + r) // 2, (t + b) // 2),
+               (l + 8, t + 8), (r - 8, b - 8))
+        for x, y in pts:
+            h = win32gui.WindowFromPoint((x, y))
+            if not h:
+                continue
+            try: root = win32gui.GetAncestor(h, 2)   # GA_ROOT
+            except Exception: root = h
+            if root != hwnd:
+                return True
+        return False
+    except Exception:
+        return False
+
+def _print_window(hwnd, client=True):
+    """Снимок самого окна через PrintWindow: работает, даже если окно
+    на другом мониторе, перекрыто или частично за краем экрана."""
+    try:
+        import ctypes
+        import win32gui, win32ui
+        from PIL import Image
+        l, t, r, b = win32gui.GetClientRect(hwnd) if client else win32gui.GetWindowRect(hwnd)
+        w, h = r - l, b - t
+        if w < 8 or h < 8: return None
+        hwnd_dc = win32gui.GetWindowDC(hwnd)
+        mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+        save_dc = mfc_dc.CreateCompatibleDC()
+        bmp = win32ui.CreateBitmap()
+        bmp.CreateCompatibleBitmap(mfc_dc, w, h)
+        save_dc.SelectObject(bmp)
+        # PW_RENDERFULLCONTENT (2) — иначе аппаратно ускоренные окна выходят чёрными
+        ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 2)
+        info = bmp.GetInfo()
+        bits = bmp.GetBitmapBits(True)
+        img = Image.frombuffer("RGB", (info["bmWidth"], info["bmHeight"]),
+                               bits, "raw", "BGRX", 0, 1)
+        try: win32gui.DeleteObject(bmp.GetHandle())
+        except Exception: pass
+        try: save_dc.DeleteDC(); mfc_dc.DeleteDC()
+        except Exception: pass
+        try: win32gui.ReleaseDC(hwnd, hwnd_dc)
+        except Exception: pass
+        return img
+    except Exception:
+        return None
+
+def shot_screen(mode="window", title=None, save_path=None, delay=0, client=True):
+    """Снимок окна (по умолчанию — клиентская область без рамки и заголовка)
+    либо всего экрана при mode="full".
+    Возвращает (ok, path_or_error, (width, height))."""
+    _ensure_dpi_aware()
     if delay and delay > 0: time.sleep(delay)
     try: from PIL import ImageGrab
-    except ImportError: return False, "PIL not installed"
+    except ImportError: return False, "PIL not installed", (0, 0)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = Path(save_path) if save_path else (SHOTS_DIR / ("shot_" + ts + ".png"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,27 +514,50 @@ def shot_screen(mode="window", title=None, save_path=None, delay=0):
     if mode == "window":
         try:
             import win32gui
-            hwnd = None
-            if title:
-                def cb(h, _):
-                    nonlocal hwnd
-                    if win32gui.IsWindowVisible(h) and title.lower() in win32gui.GetWindowText(h).lower():
-                        hwnd = h; return False
-                    return True
-                win32gui.EnumWindows(cb, None)
-            else: hwnd = win32gui.GetForegroundWindow()
+            hwnd = find_window(title) if title else None
+            if not hwnd: hwnd = win32gui.GetForegroundWindow()
             if hwnd:
-                try: win32gui.SetForegroundWindow(hwnd); time.sleep(0.2)
-                except: pass
-                left, top, right, bot = win32gui.GetWindowRect(hwnd)
-                img = ImageGrab.grab(bbox=(left, top, right, bot))
-        except: img = None
-    if img is None: img = ImageGrab.grab()
+                try:
+                    if win32gui.IsIconic(hwnd): win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
+                except Exception:
+                    pass
+                try: win32gui.SetForegroundWindow(hwnd)
+                except Exception: pass
+                time.sleep(0.3)
+                if client:
+                    try:
+                        import win32api
+                        cl, ct, cr, cb = win32gui.GetClientRect(hwnd)
+                        l, t = win32api.ClientToScreen(hwnd, (cl, ct))
+                        r, b = win32api.ClientToScreen(hwnd, (cr, cb))
+                    except Exception:
+                        l, t, r, b = win32gui.GetWindowRect(hwnd)
+                else:
+                    l, t, r, b = win32gui.GetWindowRect(hwnd)
+                if r - l >= 20 and b - t >= 20:
+                    if _is_covered(hwnd, l, t, r, b):
+                        # окно лежит под другими — снимаем само окно, а не область
+                        # экрана, иначе в кадр попадёт чужое содержимое
+                        img = _print_window(hwnd, client)
+                    if img is None or _looks_blank(img):
+                        # с экрана: точные пиксели на любом мониторе, включая
+                        # отрицательные координаты второго экрана
+                        img = _grab_region(l, t, r, b)
+                    if img is None or _looks_blank(img):
+                        alt = _print_window(hwnd, client)
+                        if alt is not None and not _looks_blank(alt):
+                            img = alt
+        except Exception:
+            img = None
+    if img is None: img = ImageGrab.grab(all_screens=True)
     try: img.save(str(out_path))
-    except Exception as e: return False, "save err: " + str(e)
-    return True, str(out_path)
+    except Exception as e: return False, "save err: " + str(e), (0, 0)
+    return True, str(out_path), img.size
 
-def shot_to_clipboard(path):
+def shot_to_clipboard(path, text=None):
+    """Кладём скриншот в буфер как картинку (CF_DIB) и, если задан text,
+    рядом — текстовую метку с путём. Text нужен мосту: он читает буфер
+    как строку, чтобы понять, что пришёл результат, и вставить картинку в чат."""
     try:
         from PIL import Image
         import win32clipboard
@@ -388,11 +568,16 @@ def shot_to_clipboard(path):
         data = output.getvalue()[14:]
         output.close()
         win32clipboard.OpenClipboard()
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
-        win32clipboard.CloseClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+            if text:
+                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+        finally:
+            win32clipboard.CloseClipboard()
         return True
-    except: return False
+    except Exception:
+        return False
 
 
 SNIPPETS = {
@@ -772,14 +957,24 @@ MANIFEST = """# UNDO — манифест для ИИ
   CLEANUP: keep=N        удалить старые (оставить N свежих на файл)
 
 == Скриншоты (SHOT) ==
-  SHOT:                  активное окно -> картинка в буфер
-  SHOT: full             весь экран -> картинка в буфер
-  SHOT: "Имя окна"       окно по имени (например SHOT: "Chrome")
+  SHOT:                  активное окно -> картинка в буфер + метка IMAGE: путь WxH
+  SHOT: "Имя окна"       нужное окно по части заголовка (SHOT: "Donkey Kong")
+  SHOT: full             весь экран
   SHOT: wait=N           снимок через N секунд (SHOT: wait=3)
   SHOT: save=path.png    сохранить по указанному пути
+  Снимается клиентская область окна — без рамки и заголовка.
   Файлы сохраняются в shots/ с меткой времени.
-  Правило: SHOT возвращает ТОЛЬКО картинку, без авто-логов.
+  Результат: строка IMAGE: <путь> <ширина>x<высота>; картинка одновременно
+  кладётся в буфер обмена, поэтому её можно вставить в чат по Ctrl+V.
+  Правило: SHOT возвращает картинку, без авто-логов.
   Если ИИ нужен лог — запрашивает отдельно: LOG: N
+
+== Язык и протокол (LANG / MANIFEST) ==
+  LANG:                  какой язык сейчас у Undo -> ответ "lang: ru"
+  LANG: ru | en | zh     переключить язык Undo (ru, en, zh)
+  MANIFEST:              полный текст этого протокола на языке Undo
+  Нужно, чтобы браузерное дополнение и ИИ говорили на одном языке:
+  дополнение спрашивает LANG: и подстраивает свой интерфейс.
 
 == Шаблоны кода (SNIPPET) ==
   SNIPPET:               без имени — список всех шаблонов
@@ -801,6 +996,12 @@ MANIFEST = """# UNDO — манифест для ИИ
   CMD: folder            открыть папку агента
   CMD: dir/ls/...        произвольная команда ОС
   CMD: status            кратко: текущий проект и версия Python
+  PS: <скрипт>           PowerShell с ожиданием: дождаться конца и вернуть вывод
+                         в ответ. Для долгих задач (поиск, копирование, сборка)
+                         используй PS:, а не CMD: run/start powershell —
+                         они не ждут завершения и ответ будет пустым.
+                         Лимит времени: cmd_timeout в config.json (по умолчанию
+                         30 минут, 0 = без лимита).
   LOG: N                 последние N строк лога (по умолчанию 200)
                          log читается из logs/undo.log, файл живёт
                          между перезапусками
@@ -1038,14 +1239,24 @@ relative ones are resolved inside the current project.
   CLEANUP: keep=N        delete old backups (keep N newest per file)
 
 == Screenshots (SHOT) ==
-  SHOT:                  active window -> image to clipboard
-  SHOT: full             full screen -> image to clipboard
-  SHOT: "Window Name"    window by name (e.g. SHOT: "Chrome")
+  SHOT:                  active window -> image to clipboard + label IMAGE: path WxH
+  SHOT: "Window Name"    specific window by title part (SHOT: "Donkey Kong")
+  SHOT: full             full screen
   SHOT: wait=N           shot after N seconds
   SHOT: save=path.png    save to a specific path
+  Captures the client area of the window — no frame, no title bar.
   Files are stored in shots/ with a timestamp.
-  Rule: SHOT returns ONLY the image, no auto-logs.
+  Result: a line IMAGE: <path> <width>x<height>; the image itself is also placed
+  on the clipboard, so it can be pasted into the chat with Ctrl+V.
+  Rule: SHOT returns the image, no auto-logs.
   If AI needs a log — it requests separately: LOG: N
+
+== Language and protocol (LANG / MANIFEST) ==
+  LANG:                  current Undo language -> reply "lang: en"
+  LANG: ru | en | zh     switch Undo language (ru, en, zh)
+  MANIFEST:              full text of this protocol in the Undo language
+  Keeps the browser extension and the AI on the same language:
+  the extension asks LANG: and adjusts its own interface.
 
 == Code snippets (SNIPPET) ==
   SNIPPET:               without a name — list all snippets
@@ -1139,6 +1350,12 @@ Manual CHECK: path always available for any file.
   CMD: folder            open agent folder
   CMD: dir/ls/...        arbitrary OS command
   CMD: status            brief: current project and Python version
+  PS: <script>           PowerShell with waiting: run it, wait for the end and
+                         return the output. For long jobs (search, copying,
+                         builds) use PS:, not CMD: run/start powershell — those
+                         do not wait and the answer comes back empty.
+                         Time limit: cmd_timeout in config.json (30 min by
+                         default, 0 = no limit).
   LOG: N                 last N log lines (default 200)
                          log lives in logs/undo.log across restarts
 
@@ -1353,6 +1570,13 @@ MANIFEST_ZH = """# UNDO — AI 清单
   DIFF: path             与最后一个备份的 unified diff
   CLEANUP: keep=N        删除旧备份 (每个文件保留 N 个最新)
 
+== 命令 (CMD / PS) ==
+  CMD: <команда>         执行系统命令并返回输出
+  PS: <script>           PowerShell 并等待结束, 返回输出。
+                         长时间任务 (搜索, 复制, 构建) 用 PS:, 不要用
+                         CMD: run / start powershell — 它们不等待, 结果为空。
+                         时间限制: config.json 的 cmd_timeout (默认 30 分钟, 0 = 无限)。
+
 == 截图 (SHOT) ==
   SHOT:                  活动窗口 -> 图像入剪贴板
   SHOT: full             全屏 -> 图像入剪贴板
@@ -1362,6 +1586,13 @@ MANIFEST_ZH = """# UNDO — AI 清单
   文件保存在 shots/ 目录, 带时间戳。
   规则: SHOT 只返回图像, 不带自动日志。
   如果 AI 需要日志, 单独请求: LOG: N
+
+== 语言和协议 (LANG / MANIFEST) ==
+  LANG:                  当前 Undo 语言 -> 回复 "lang: zh"
+  LANG: ru | en | zh     切换 Undo 语言 (ru, en, zh)
+  MANIFEST:              当前语言的完整协议文本
+  让浏览器扩展和 AI 使用同一种语言:
+  扩展会请求 LANG: 并同步自己的界面。
 
 == 代码模板 (SNIPPET) ==
   SNIPPET:               不带名称 — 列出所有模板
@@ -2053,6 +2284,7 @@ class Undo(tk.Tk):
         self.after(80, self._drain)
 
     def _poll(self):
+        self._maybe_auto_ctx()
         if self.auto and not self.busy:
             try: txt = clip_get()
             except Exception as e:
@@ -2070,6 +2302,24 @@ class Undo(tk.Tk):
                 else:
                     self._print("       (no command marker)", "dim")
         self.after(700, self._poll)
+
+    def _maybe_auto_ctx(self):
+        """Автосохранение контекста проекта раз в auto_ctx_min минут (0 = выкл)."""
+        try:
+            mins = int(CFG.get("auto_ctx_min", 0) or 0)
+        except Exception:
+            mins = 0
+        if mins <= 0:
+            return
+        now = time.time()
+        if now - getattr(self, "_last_auto_ctx", 0) < mins * 60:
+            return
+        self._last_auto_ctx = now
+        try:
+            self._save_context()
+            self._print("auto-ctx: saved", "dim")
+        except Exception as e:
+            self._print("auto-ctx err: " + str(e), "err")
 
     def _show_clip(self):
         txt = clip_get()
@@ -2142,11 +2392,16 @@ class Undo(tk.Tk):
     def _shell_run(self, cmd):
         """Выполнить команду в cmd.exe и вывести результат в лог."""
         cwd = str(getattr(self, "_shell_cwd", AGENT_DIR))
+        try:
+            tmo = int(CFG.get("cmd_timeout", 1800) or 0)
+        except Exception:
+            tmo = 1800
         def _work():
             try:
                 out = subprocess.check_output(
                     cmd, shell=True, cwd=cwd,
-                    stderr=subprocess.STDOUT, timeout=60
+                    stderr=subprocess.STDOUT,
+                    timeout=(tmo if tmo > 0 else None)
                 ).decode("cp866", errors="replace")
                 if not out.strip():
                     self._print("(no output)", "dim")
@@ -2162,7 +2417,7 @@ class Undo(tk.Tk):
                 for line in err.splitlines():
                     self._print("  " + line, "err")
             except subprocess.TimeoutExpired:
-                self._print("timeout (60s)", "err")
+                self._print("timeout (" + str(tmo) + "s): увеличьте cmd_timeout в config.json или поставьте 0", "err")
             except Exception as e:
                 self._print("shell err: " + str(e), "err")
         threading.Thread(target=_work, daemon=True).start()
@@ -2259,12 +2514,32 @@ class Undo(tk.Tk):
         self.destroy()
         try:
             cf = 0x00000010 if os.name == "nt" else 0
-            subprocess.Popen([sys.executable, str(Path(__file__).resolve())],
-                             cwd=str(Path(__file__).parent.resolve()),
-                             creationflags=cf)
+            if getattr(sys, "frozen", False):
+                # собранный exe перезапускает сам себя с теми же аргументами
+                subprocess.Popen([sys.executable] + list(sys.argv[1:]),
+                                 cwd=str(Path(sys.executable).parent),
+                                 creationflags=cf)
+            else:
+                subprocess.Popen([sys.executable, str(Path(__file__).resolve())],
+                                 cwd=str(Path(__file__).parent.resolve()),
+                                 creationflags=cf)
         except: pass
 
     def _dispatch(self, mode, arg, payload):
+        # LANG: -> "lang: en"; LANG: ru -> переключить язык и ответить.
+        # Нужно дополнению в браузере: его интерфейс идёт за языком Undo.
+        if mode == "lang":
+            want = (arg or "").strip().lower()
+            if want in ("ru", "en", "zh") and want != CFG.get("language"):
+                CFG["language"] = want
+                save_config(CFG)
+                self._print("language: " + want, "ok")
+                self.after(400, self._restart_self)
+            return True, "lang: " + str(CFG.get("language", "en"))
+        # MANIFEST: -> полный протокол на текущем языке (для вставки в чат).
+        if mode == "manifest":
+            cur = CFG.get("language", "en")
+            return True, MANIFESTS.get(cur, MANIFESTS["en"])
         if mode == "file":
             target, bak = save_file(arg, payload)
             kb = len(payload.encode("utf-8"))/1024
@@ -2577,23 +2852,35 @@ class Undo(tk.Tk):
         if mode == "shot":
             raw = (arg or "").strip()
             mode2 = "window"; title = None; delay = 0; save_path = None
-            for p in raw.split():
+            # Имя окна в кавычках имеет приоритет: SHOT: "Donkey Kong"
+            rest = raw
+            qm = re.search(r'"([^"]+)"', raw)
+            if qm:
+                title = qm.group(1).strip()
+                rest = (raw[:qm.start()] + " " + raw[qm.end():]).strip()
+            free = []
+            for p in rest.split():
                 p_low = p.lower()
-                if p_low in ("window","full"): mode2 = p_low
+                if p_low == "full": mode2 = "full"
+                elif p_low == "window": mode2 = "window"
                 elif p_low.startswith("wait="):
                     try: delay = int(p_low[5:])
-                    except: pass
+                    except Exception: pass
                 elif p_low.startswith("save="):
-                    save_path = raw.split("save=",1)[1].strip().strip('"')
-                elif p.startswith('"') and p.endswith('"'):
-                    title = p.strip('"')
-            ok, path = shot_screen(mode=mode2, title=title, save_path=save_path, delay=delay)
+                    save_path = rest.split("save=", 1)[1].strip().strip('"')
+                else: free.append(p)
+            if not title and free:
+                title = " ".join(free)
+            ok, path, size = shot_screen(mode=mode2, title=title,
+                                         save_path=save_path, delay=delay)
             if not ok: return False, "err: " + path
-            clip_ok = shot_to_clipboard(path)
+            # Метка рядом с картинкой: без неё мост не понимает, что пришёл результат
+            label = "IMAGE: " + path + " " + str(size[0]) + "x" + str(size[1])
+            clip_ok = shot_to_clipboard(path, label)
             if not clip_ok:
-                return False, ("saved: " + path +
+                return False, ("IMAGE: " + path + " " + str(size[0]) + "x" + str(size[1]) +
                                "\n  WARN: clipboard copy failed (install pywin32)")
-            return True, "shot (in clipboard): " + path
+            return True, label
         if mode == "log":
             try: n = int((arg or "200").strip())
             except: n = 200
@@ -2608,6 +2895,31 @@ class Undo(tk.Tk):
                 except: return False, "format: TASK: done N"
                 return task_done(CFG.get("current_project"), n)
             return task_list(CFG.get("current_project"))
+        # PowerShell с ожиданием: дожидаемся конца скрипта и отдаём его вывод.
+        # В отличие от CMD: run, окно не остаётся висеть — результат сразу уходит в ответ.
+        if mode == "ps":
+            raw = (arg or payload).strip()
+            if not raw:
+                return False, "format: PS: <команда PowerShell>"
+            try:
+                tmo = int(CFG.get("cmd_timeout", 1800) or 0)
+            except Exception:
+                tmo = 1800
+            script = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; " + raw
+            try:
+                pr = subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                    cwd=str(AGENT_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=(tmo if tmo > 0 else None))
+                out = (pr.stdout or b"").decode("utf-8", errors="replace").strip()
+                if pr.returncode != 0:
+                    return False, "err: exit " + str(pr.returncode) + ("\n" + out if out else "")
+                return True, out if out else "done"
+            except subprocess.TimeoutExpired:
+                return False, ("err: timeout " + str(tmo) + "s — увеличьте \"cmd_timeout\" "
+                               "в config.json или поставьте 0 (без лимита)")
+            except Exception as e:
+                return False, "err: " + str(e)
         if mode == "cmd":
             raw = (arg or payload).strip(); c = raw.lower()
             if c in ("status","info"):
@@ -2615,6 +2927,33 @@ class Undo(tk.Tk):
                               "\npython: " + sys.version.split()[0])
             if c == "tree": return tree_impl()
             if c in ("reset","clear"): self.last_clip = ""; return True, "buffer reset"
+            # Модель часто просит «CMD: start powershell -NoExit -Command ...».
+            # Такой запуск не ждёт конца и ломает кавычки в cmd.exe — ответ теряется.
+            # Перехватываем и выполняем скрипт сами, дожидаясь завершения.
+            mps = re.match(r'^(?:start\s+)?powershell[^\n]*?(?:-command|-c)\s+(.+)$', raw, re.I | re.S)
+            if mps:
+                script = mps.group(1).strip()
+                if len(script) >= 2 and script[0] == script[-1] and script[0] in "\"'":
+                    script = script[1:-1]
+                try:
+                    ptmo = int(CFG.get("cmd_timeout", 1800) or 0)
+                except Exception:
+                    ptmo = 1800
+                try:
+                    pr = subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                         "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; " + script],
+                        cwd=str(AGENT_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        timeout=(ptmo if ptmo > 0 else None))
+                    out = (pr.stdout or b"").decode("utf-8", errors="replace").strip()
+                    if pr.returncode != 0:
+                        return False, "err: exit " + str(pr.returncode) + ("\n" + out if out else "")
+                    return True, out if out else "done"
+                except subprocess.TimeoutExpired:
+                    return False, ("err: timeout " + str(ptmo) + "s\n" +
+                                   "увеличьте \"cmd_timeout\" в config.json или поставьте 0")
+                except Exception as e:
+                    return False, "err: " + str(e)
             if c.startswith("run "):
                 cmd = raw[4:].strip()
                 try:
@@ -2630,12 +2969,26 @@ class Undo(tk.Tk):
             if c in ("folder","dir","explorer"):
                 try: os.startfile(str(AGENT_DIR)); return True, "folder opened"
                 except Exception as e: return False, "err: " + str(e)
+            # Долгие операции (поиск и копирование файлов) не обрываем:
+            # лимит из настроек, 0 = ждать до завершения.
+            try:
+                tmo = int(CFG.get("cmd_timeout", 1800) or 0)
+            except Exception:
+                tmo = 1800
             try:
                 out = subprocess.check_output(raw, shell=True, cwd=str(AGENT_DIR),
-                                              stderr=subprocess.STDOUT, timeout=30
+                                              stderr=subprocess.STDOUT,
+                                              timeout=(tmo if tmo > 0 else None)
                                               ).decode("cp866", errors="replace")
                 return True, out if out.strip() else "done"
-            except subprocess.CalledProcessError as e: return False, "err: " + str(e)
+            except subprocess.TimeoutExpired:
+                return False, ("err: timeout " + str(tmo) + "s\n" +
+                               "увеличьте \"cmd_timeout\" в config.json или поставьте 0 (без лимита)")
+            except subprocess.CalledProcessError as e:
+                txt = ""
+                try: txt = e.output.decode("cp866", errors="replace")
+                except Exception: pass
+                return False, "err: exit " + str(e.returncode) + (("\n" + txt) if txt.strip() else "")
             except Exception as e: return False, "err: " + str(e)
         return False, "unknown: " + mode
 
@@ -2870,6 +3223,9 @@ class Undo(tk.Tk):
     def _set_lang(self, code):
         CFG["language"] = code
         save_config(CFG)
+        # маркер для дополнения в браузере: оно подхватит язык и перерисует панель
+        try: clip_set("UNDO_LANG: " + code)
+        except Exception: pass
         self._print("language: " + code + " — restarting...", "warn")
         self.after(600, self._restart_self)
 
@@ -2880,9 +3236,15 @@ class Undo(tk.Tk):
 
 
 if __name__ == "__main__":
+    # --headless: окна нет, движок живёт в фоне и общается только через буфер.
+    # Так выглядит установка, где весь интерфейс — в браузерном дополнении.
+    headless = ("--headless" in sys.argv) or bool(CFG.get("headless", False))
     try:
         app = Undo()
         app.protocol("WM_DELETE_WINDOW", app._on_exit)
+        if headless:
+            app.withdraw()
+            app._print("headless: окно скрыто, работает только обмен через буфер", "warn")
         app.mainloop()
     except Exception as e:
         import traceback
